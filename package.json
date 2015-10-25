@@ -46,6 +46,7 @@
   ],
   "main": "index.js",
   "scripts": {
-    "test": "grunt"
+    "test": "grunt",
+    "doctest": "find doc -name '*.md' | ./doctest.js"
   }
 }
