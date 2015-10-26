@@ -1,0 +1,33 @@
+{
+  "name": "rx.modular",
+  "version": "4.0.0",
+  "description": "RxJS in modular form",
+  "main": "index.js",
+  "scripts": {
+    "test": "tape test/**/*.js | tap-spec"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Reactive-Extensions/RxJS.git"
+  },
+  "keywords": [
+    "Rx",
+    "RxJS",
+    "Reactive",
+    "FRP",
+    "Promise",
+    "Callback",
+    "Observable",
+    "Observer"
+  ],
+  "author": "Microsoft Corporation",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Reactive-Extensions/RxJS/issues"
+  },
+  "homepage": "https://github.com/Reactive-Extensions/RxJS",
+  "devDependencies": {
+    "tap-spec": "^4.1.0",
+    "tape": "^4.2.2"
+  }
+}

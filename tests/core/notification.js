@@ -1,5 +1,8 @@
 (function () {
-  QUnit.module('NotificationTest');
+  /* jshint undef: true, unused: true */
+  /* globals QUnit, test, Rx, equal, ok */
+
+  QUnit.module('Notification');
 
   var createOnNext = Rx.Notification.createOnNext,
       createOnError = Rx.Notification.createOnError,
@@ -15,8 +18,6 @@
     equal('N', n.kind);
 
     equal(42, n.value);
-
-    ok(n.exception === null);
   });
 
   test('onNext toString', function () {
@@ -79,7 +80,7 @@
     var n1 = createOnNext(42);
 
     var results = n1.accept(new AcceptObserver(
-      function (x) {
+      function () {
         return 'OK';
       },
       function () {
@@ -101,13 +102,13 @@
 
     n1.accept(
       function () {
-        return obs = true;
+        obs = true;
       },
       function () {
-        return ok(false);
+        ok(false);
       },
       function () {
-        return ok(false);
+        ok(false);
       }
     );
 
@@ -118,14 +119,14 @@
     var n1 = createOnNext(42);
 
     var results = n1.accept(
-      function (x) {
+      function () {
         return 'OK';
       },
       function () {
-        return ok(false);
+        ok(false);
       },
       function () {
-        return ok(false);
+        ok(false);
       }
     );
 
@@ -138,7 +139,7 @@
     var n = createOnError(error);
 
     equal('E', n.kind);
-    equal(error, n.exception);
+    equal(error, n.error);
   });
 
   test('onError ToString', function () {
@@ -156,11 +157,11 @@
 
     function CheckOnErrorObserver() {
       __super__.call(this);
-      this.exception = null;
+      this.error = null;
     }
 
     CheckOnErrorObserver.prototype.onError = function (exception) {
-      this.exception = exception;
+      this.error = exception;
     };
 
     return CheckOnErrorObserver;
@@ -176,7 +177,7 @@
 
     n1.accept(obs);
 
-    equal(error, obs.exception);
+    equal(error, obs.error);
   });
 
   test('onError accept observer with result', function () {
@@ -244,7 +245,7 @@
     var n = createOnCompleted();
 
     equal('C', n.kind);
-    equal(null, n.exception);
+    equal(null, n.error);
     equal(null, n.value);
   });
 
@@ -339,7 +340,7 @@
   test('toObservable empty', function () {
     var scheduler = new Rx.TestScheduler();
 
-    var results = scheduler.startWithCreate(function () {
+    var results = scheduler.startScheduler(function () {
       return createOnCompleted().toObservable(scheduler);
     });
 
@@ -351,8 +352,8 @@
   test('toObservable just', function () {
     var scheduler = new Rx.TestScheduler();
 
-    var results = scheduler.startWithCreate(function () {
-        return createOnNext(42).toObservable(scheduler);
+    var results = scheduler.startScheduler(function () {
+      return createOnNext(42).toObservable(scheduler);
     });
 
     results.messages.assertEqual(
@@ -366,7 +367,7 @@
 
     var scheduler = new Rx.TestScheduler();
 
-    var results = scheduler.startWithCreate(function () {
+    var results = scheduler.startScheduler(function () {
       return createOnError(error).toObservable(scheduler);
     });
 

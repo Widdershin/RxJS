@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
+// Copyright (c) Microsoft, All rights reserved. See License.txt in the project root for license information.
 
 ;(function (factory) {
   var objectTypes = {
@@ -6,15 +6,18 @@
     'object': true
   };
 
-  var
-    freeExports = objectTypes[typeof exports] && exports && !exports.nodeType && exports,
-    freeSelf = objectTypes[typeof self] && self.Object && self,
-    freeWindow = objectTypes[typeof window] && window && window.Object && window,
-    freeModule = objectTypes[typeof module] && module && !module.nodeType && module,
-    moduleExports = freeModule && freeModule.exports === freeExports && freeExports,
-    freeGlobal = freeExports && freeModule && typeof global == 'object' && global && global.Object && global;
+  function checkGlobal(value) {
+    return (value && value.Object === Object) ? value : null;
+  }
 
-  var root = root = freeGlobal || ((freeWindow !== (this && this.window)) && freeWindow) || freeSelf || this;
+  var freeExports = (objectTypes[typeof exports] && exports && !exports.nodeType) ? exports : null;
+  var freeModule = (objectTypes[typeof module] && module && !module.nodeType) ? module : null;
+  var freeGlobal = checkGlobal(freeExports && freeModule && typeof global === 'object' && global);
+  var freeSelf = checkGlobal(objectTypes[typeof self] && self);
+  var freeWindow = checkGlobal(objectTypes[typeof window] && window);
+  var moduleExports = (freeModule && freeModule.exports === freeExports) ? freeExports : null;
+  var thisGlobal = checkGlobal(objectTypes[typeof this] && this);
+  var root = freeGlobal || ((freeWindow !== (thisGlobal && thisGlobal.window)) && freeWindow) || freeSelf || thisGlobal || Function('return this')();
 
   // Because of build optimizers
   if (typeof define === 'function' && define.amd) {
@@ -29,7 +32,10 @@
 }.call(this, function (root, exp, Rx, undefined) {
 
   var Observable = Rx.Observable,
+    ObservableBase = Rx.ObservableBase,
+    AbstractObserver = Rx.internals.AbstractObserver,
     CompositeDisposable = Rx.CompositeDisposable,
+    BinaryDisposable = Rx.BinaryDisposable,
     RefCountDisposable = Rx.RefCountDisposable,
     SingleAssignmentDisposable = Rx.SingleAssignmentDisposable,
     SerialDisposable = Rx.SerialDisposable,
@@ -38,33 +44,32 @@
     observableEmpty = Observable.empty,
     observableNever = Observable.never,
     AnonymousObservable = Rx.AnonymousObservable,
-    observerCreate = Rx.Observer.create,
     addRef = Rx.internals.addRef,
-    defaultComparer = Rx.internals.isEqual,
     inherits = Rx.internals.inherits,
+    bindCallback = Rx.internals.bindCallback,
     noop = Rx.helpers.noop,
-    identity = Rx.helpers.identity,
     isPromise = Rx.helpers.isPromise,
     isFunction = Rx.helpers.isFunction,
-    bindCallback = Rx.internals.bindCallback,
-    observableFromPromise = Observable.fromPromise,
-    ArgumentOutOfRangeError = Rx.ArgumentOutOfRangeError;
+    observableFromPromise = Observable.fromPromise;
 
   var errorObj = {e: {}};
-  var tryCatchTarget;
-  function tryCatcher() {
-    try {
-      return tryCatchTarget.apply(this, arguments);
-    } catch (e) {
-      errorObj.e = e;
-      return errorObj;
-    }
+  
+  function tryCatcherGen(tryCatchTarget) {
+    return function tryCatcher() {
+      try {
+        return tryCatchTarget.apply(this, arguments);
+      } catch (e) {
+        errorObj.e = e;
+        return errorObj;
+      }
+    };
   }
-  function tryCatch(fn) {
+
+  var tryCatch = Rx.internals.tryCatch = function tryCatch(fn) {
     if (!isFunction(fn)) { throw new TypeError('fn must be a function'); }
-    tryCatchTarget = fn;
-    return tryCatcher;
-  }
+    return tryCatcherGen(fn);
+  };
+
   function thrower(e) {
     throw e;
   }
@@ -78,7 +83,7 @@
 
     Map.prototype['delete'] = function (key) {
       var i = this._keys.indexOf(key);
-      if (i === -1) { return false }
+      if (i === -1) { return false; }
       this._values.splice(i, 1);
       this._keys.splice(i, 1);
       this.size--;
@@ -412,6 +417,42 @@
     }, source);
   }
 
+  var PairwiseObservable = (function (__super__) {
+    inherits(PairwiseObservable, __super__);
+    function PairwiseObservable(source) {
+      this.source = source;
+      __super__.call(this);
+    }
+
+    PairwiseObservable.prototype.subscribeCore = function (o) {
+      return this.source.subscribe(new PairwiseObserver(o));
+    };
+
+    return PairwiseObservable;
+  }(ObservableBase));
+
+  var PairwiseObserver = (function(__super__) {
+    inherits(PairwiseObserver, __super__);
+    function PairwiseObserver(o) {
+      this._o = o;
+      this._p = null;
+      this._hp = false;
+    }
+
+    PairwiseObserver.prototype.next = function (x) {
+      if (this._hp) {
+        this._o.onNext([this._p, x]);
+      } else {
+        this._hp = true;
+      }
+      this._p = x;
+    };
+    PairwiseObserver.prototype.error = function (err) { this._o.onError(err); };
+    PairwiseObserver.prototype.completed = function () { this._o.onCompleted(); };
+
+    return PairwiseObserver;
+  }(AbstractObserver));
+
   /**
    * Returns a new observable that triggers on the second and subsequent triggerings of the input observable.
    * The Nth triggering of the input observable passes the arguments from the N-1th and Nth triggering as a pair.
@@ -419,21 +460,7 @@
    * @returns {Observable} An observable that triggers on successive pairs of observations from the input observable as an array.
    */
   observableProto.pairwise = function () {
-    var source = this;
-    return new AnonymousObservable(function (observer) {
-      var previous, hasPrevious = false;
-      return source.subscribe(
-        function (x) {
-          if (hasPrevious) {
-            observer.onNext([previous, x]);
-          } else {
-            hasPrevious = true;
-          }
-          previous = x;
-        },
-        observer.onError.bind(observer),
-        observer.onCompleted.bind(observer));
-    }, source);
+    return new PairwiseObservable(this);
   };
 
   /**
@@ -450,9 +477,10 @@
    *    and the second triggers when the predicate returns false.
   */
   observableProto.partition = function(predicate, thisArg) {
+    var fn = bindCallback(predicate, thisArg, 3);
     return [
       this.filter(predicate, thisArg),
-      this.filter(function (x, i, o) { return !predicate.call(thisArg, x, i, o); })
+      this.filter(function (x, i, o) { return !fn(x, i, o); })
     ];
   };
 
@@ -558,22 +586,34 @@
     }, source);
   };
 
-  var GroupedObservable = (function (__super__) {
-    inherits(GroupedObservable, __super__);
-
-    function subscribe(observer) {
-      return this.underlyingObservable.subscribe(observer);
+  var UnderlyingObservable = (function (__super__) {
+    inherits(UnderlyingObservable, __super__);
+    function UnderlyingObservable(m, u) {
+      this._m = m;
+      this._u = u;
+      __super__.call(this);
     }
 
+    UnderlyingObservable.prototype.subscribeCore = function (o) {
+      return new BinaryDisposable(this._m.getDisposable(), this._u.subscribe(o));
+    };
+
+    return UnderlyingObservable;
+  }(ObservableBase));
+
+  var GroupedObservable = (function (__super__) {
+    inherits(GroupedObservable, __super__);
     function GroupedObservable(key, underlyingObservable, mergedDisposable) {
-      __super__.call(this, subscribe);
+      __super__.call(this);
       this.key = key;
       this.underlyingObservable = !mergedDisposable ?
         underlyingObservable :
-        new AnonymousObservable(function (observer) {
-          return new CompositeDisposable(mergedDisposable.getDisposable(), underlyingObservable.subscribe(observer));
-        });
+        new UnderlyingObservable(mergedDisposable, underlyingObservable);
     }
+
+    GroupedObservable.prototype._subscribe = function (o) {
+      return this.underlyingObservable.subscribe(o);
+    };
 
     return GroupedObservable;
   }(Observable));

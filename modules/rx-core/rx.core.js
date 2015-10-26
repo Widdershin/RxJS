@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
+// Copyright (c) Microsoft, All rights reserved. See License.txt in the project root for license information.
 
 ;(function (undefined) {
 
@@ -7,15 +7,18 @@
     'object': true
   };
 
-  var
-    freeExports = objectTypes[typeof exports] && exports && !exports.nodeType && exports,
-    freeSelf = objectTypes[typeof self] && self.Object && self,
-    freeWindow = objectTypes[typeof window] && window && window.Object && window,
-    freeModule = objectTypes[typeof module] && module && !module.nodeType && module,
-    moduleExports = freeModule && freeModule.exports === freeExports && freeExports,
-    freeGlobal = freeExports && freeModule && typeof global == 'object' && global && global.Object && global;
+  function checkGlobal(value) {
+    return (value && value.Object === Object) ? value : null;
+  }
 
-  var root = root = freeGlobal || ((freeWindow !== (this && this.window)) && freeWindow) || freeSelf || this;
+  var freeExports = (objectTypes[typeof exports] && exports && !exports.nodeType) ? exports : null;
+  var freeModule = (objectTypes[typeof module] && module && !module.nodeType) ? module : null;
+  var freeGlobal = checkGlobal(freeExports && freeModule && typeof global === 'object' && global);
+  var freeSelf = checkGlobal(objectTypes[typeof self] && self);
+  var freeWindow = checkGlobal(objectTypes[typeof window] && window);
+  var moduleExports = (freeModule && freeModule.exports === freeExports) ? freeExports : null;
+  var thisGlobal = checkGlobal(objectTypes[typeof this] && this);
+  var root = freeGlobal || ((freeWindow !== (thisGlobal && thisGlobal.window)) && freeWindow) || freeSelf || thisGlobal || Function('return this')();
 
   var Rx = {
     internals: {},
@@ -67,20 +70,23 @@ var
   };
 
   var errorObj = {e: {}};
-  var tryCatchTarget;
-  function tryCatcher() {
-    try {
-      return tryCatchTarget.apply(this, arguments);
-    } catch (e) {
-      errorObj.e = e;
-      return errorObj;
-    }
+  
+  function tryCatcherGen(tryCatchTarget) {
+    return function tryCatcher() {
+      try {
+        return tryCatchTarget.apply(this, arguments);
+      } catch (e) {
+        errorObj.e = e;
+        return errorObj;
+      }
+    };
   }
-  function tryCatch(fn) {
+
+  var tryCatch = Rx.internals.tryCatch = function tryCatch(fn) {
     if (!isFunction(fn)) { throw new TypeError('fn must be a function'); }
-    tryCatchTarget = fn;
-    return tryCatcher;
-  }
+    return tryCatcherGen(fn);
+  };
+
   function thrower(e) {
     throw e;
   }
@@ -198,7 +204,7 @@ var
   // Rx Utils
   var addRef = Rx.internals.addRef = function (xs, r) {
     return new AnonymousObservable(function (observer) {
-      return new CompositeDisposable(r.getDisposable(), xs.subscribe(observer));
+      return new BinaryDisposable(r.getDisposable(), xs.subscribe(observer));
     });
   };
 
@@ -223,9 +229,6 @@ var
       len = arguments.length;
       args = new Array(len);
       for(i = 0; i < len; i++) { args[i] = arguments[i]; }
-    }
-    for(i = 0; i < len; i++) {
-      if (!isDisposable(args[i])) { throw new TypeError('Not a disposable'); }
     }
     this.disposables = args;
     this.isDisposed = false;
@@ -325,6 +328,10 @@ var
     if (disposable.isDisposed) { throw new ObjectDisposedError(); }
   };
 
+  var disposableFixup = Disposable._fixup = function (result) {
+    return isDisposable(result) ? result : disposableEmpty;
+  };
+
   // Single assignment
   var SingleAssignmentDisposable = Rx.SingleAssignmentDisposable = function () {
     this.isDisposed = false;
@@ -344,8 +351,8 @@ var
       this.isDisposed = true;
       var old = this.current;
       this.current = null;
+      old && old.dispose();
     }
-    old && old.dispose();
   };
 
   // Multiple assignment disposable
@@ -374,6 +381,39 @@ var
     old && old.dispose();
   };
 
+  var BinaryDisposable = Rx.BinaryDisposable = function (first, second) {
+    this._first = first;
+    this._second = second;
+    this.isDisposed = false;
+  };
+
+  BinaryDisposable.prototype.dispose = function () {
+    if (!this.isDisposed) {
+      this.isDisposed = true;
+      var old1 = this._first;
+      this._first = null;
+      old1 && old1.dispose();
+      var old2 = this._second;
+      this._second = null;
+      old2 && old2.dispose();
+    }
+  };
+
+  var NAryDisposable = Rx.NAryDisposable = function (disposables) {
+    this._disposables = disposables;
+    this.isDisposed = false;
+  };
+
+  NAryDisposable.prototype.dispose = function () {
+    if (!this.isDisposed) {
+      this.isDisposed = true;
+      for (var i = 0, len = this._disposables.length; i < len; i++) {
+        this._disposables[i].dispose();
+      }
+      this._disposables.length = 0;
+    }
+  };
+
   var ScheduledItem = Rx.internals.ScheduledItem = function (scheduler, state, action, dueTime, comparer) {
     this.scheduler = scheduler;
     this.state = state;
@@ -396,94 +436,57 @@ var
   };
 
   ScheduledItem.prototype.invokeCore = function () {
-    return this.action(this.scheduler, this.state);
+    return disposableFixup(this.action(this.scheduler, this.state));
   };
 
   /** Provides a set of static properties to access commonly used schedulers. */
   var Scheduler = Rx.Scheduler = (function () {
 
-    function Scheduler(now, schedule, scheduleRelative, scheduleAbsolute) {
-      this.now = now;
-      this._schedule = schedule;
-      this._scheduleRelative = scheduleRelative;
-      this._scheduleAbsolute = scheduleAbsolute;
-    }
+    function Scheduler() { }
 
     /** Determines whether the given object is a scheduler */
     Scheduler.isScheduler = function (s) {
       return s instanceof Scheduler;
-    }
-
-    function invokeAction(scheduler, action) {
-      action();
-      return disposableEmpty;
-    }
+    };
 
     var schedulerProto = Scheduler.prototype;
 
     /**
-     * Schedules an action to be executed.
-     * @param {Function} action Action to execute.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    schedulerProto.schedule = function (action) {
-      return this._schedule(action, invokeAction);
+   * Schedules an action to be executed.
+   * @param state State passed to the action to be executed.
+   * @param {Function} action Action to be executed.
+   * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
+   */
+    schedulerProto.schedule = function (state, action) {
+      throw new NotImplementedError();
     };
 
-    /**
-     * Schedules an action to be executed.
-     * @param state State passed to the action to be executed.
-     * @param {Function} action Action to be executed.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    schedulerProto.scheduleWithState = function (state, action) {
-      return this._schedule(state, action);
+  /**
+   * Schedules an action to be executed after dueTime.
+   * @param state State passed to the action to be executed.
+   * @param {Function} action Action to be executed.
+   * @param {Number} dueTime Relative time after which to execute the action.
+   * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
+   */
+    schedulerProto.scheduleFuture = function (state, dueTime, action) {
+      var dt = dueTime;
+      dt instanceof Date && (dt = dt - this.now());
+      dt = Scheduler.normalize(dt);
+
+      if (dt === 0) { return this.schedule(state, action); }
+
+      return this._scheduleFuture(state, dt, action);
     };
 
-    /**
-     * Schedules an action to be executed after the specified relative due time.
-     * @param {Function} action Action to execute.
-     * @param {Number} dueTime Relative time after which to execute the action.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    schedulerProto.scheduleWithRelative = function (dueTime, action) {
-      return this._scheduleRelative(action, dueTime, invokeAction);
-    };
-
-    /**
-     * Schedules an action to be executed after dueTime.
-     * @param state State passed to the action to be executed.
-     * @param {Function} action Action to be executed.
-     * @param {Number} dueTime Relative time after which to execute the action.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    schedulerProto.scheduleWithRelativeAndState = function (state, dueTime, action) {
-      return this._scheduleRelative(state, dueTime, action);
-    };
-
-    /**
-     * Schedules an action to be executed at the specified absolute due time.
-     * @param {Function} action Action to execute.
-     * @param {Number} dueTime Absolute time at which to execute the action.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-      */
-    schedulerProto.scheduleWithAbsolute = function (dueTime, action) {
-      return this._scheduleAbsolute(action, dueTime, invokeAction);
-    };
-
-    /**
-     * Schedules an action to be executed at dueTime.
-     * @param {Mixed} state State passed to the action to be executed.
-     * @param {Function} action Action to be executed.
-     * @param {Number}dueTime Absolute time at which to execute the action.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    schedulerProto.scheduleWithAbsoluteAndState = function (state, dueTime, action) {
-      return this._scheduleAbsolute(state, dueTime, action);
+    schedulerProto._scheduleFuture = function (state, dueTime, action) {
+      throw new NotImplementedError();
     };
 
     /** Gets the current time according to the local machine's system clock. */
     Scheduler.now = defaultNow;
+
+    /** Gets the current time according to the local machine's system clock. */
+    Scheduler.prototype.now = defaultNow;
 
     /**
      * Normalizes the specified TimeSpan value to a positive value.
@@ -510,7 +513,7 @@ var
       function innerAction(state2) {
         var isAdded = false, isDone = false;
 
-        var d = scheduler.scheduleWithState(state2, scheduleWork);
+        var d = scheduler.schedule(state2, scheduleWork);
         if (!isDone) {
           group.add(d);
           isAdded = true;
@@ -528,7 +531,7 @@ var
       }
     }
 
-    function invokeRecDate(scheduler, pair, method) {
+    function invokeRecDate(scheduler, pair) {
       var state = pair[0], action = pair[1], group = new CompositeDisposable();
       action(state, innerAction);
       return group;
@@ -536,7 +539,7 @@ var
       function innerAction(state2, dueTime1) {
         var isAdded = false, isDone = false;
 
-        var d = scheduler[method](state2, dueTime1, scheduleWork);
+        var d = scheduler.scheduleFuture(state2, dueTime1, scheduleWork);
         if (!isDone) {
           group.add(d);
           isAdded = true;
@@ -554,91 +557,30 @@ var
       }
     }
 
-    function invokeRecDateRelative(s, p) {
-      return invokeRecDate(s, p, 'scheduleWithRelativeAndState');
-    }
-
-    function invokeRecDateAbsolute(s, p) {
-      return invokeRecDate(s, p, 'scheduleWithAbsoluteAndState');
-    }
-
-    function scheduleInnerRecursive(action, self) {
-      action(function(dt) { self(action, dt); });
-    }
-
-    /**
-     * Schedules an action to be executed recursively.
-     * @param {Function} action Action to execute recursively. The parameter passed to the action is used to trigger recursive scheduling of the action.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    schedulerProto.scheduleRecursive = function (action) {
-      return this.scheduleRecursiveWithState(action, scheduleInnerRecursive);
-    };
-
     /**
      * Schedules an action to be executed recursively.
      * @param {Mixed} state State passed to the action to be executed.
      * @param {Function} action Action to execute recursively. The last parameter passed to the action is used to trigger recursive scheduling of the action, passing in recursive invocation state.
      * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
      */
-    schedulerProto.scheduleRecursiveWithState = function (state, action) {
-      return this.scheduleWithState([state, action], invokeRecImmediate);
+    schedulerProto.scheduleRecursive = function (state, action) {
+      return this.schedule([state, action], invokeRecImmediate);
     };
 
     /**
-     * Schedules an action to be executed recursively after a specified relative due time.
-     * @param {Function} action Action to execute recursively. The parameter passed to the action is used to trigger recursive scheduling of the action at the specified relative time.
-     * @param {Number}dueTime Relative time after which to execute the action for the first time.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    schedulerProto.scheduleRecursiveWithRelative = function (dueTime, action) {
-      return this.scheduleRecursiveWithRelativeAndState(action, dueTime, scheduleInnerRecursive);
-    };
-
-    /**
-     * Schedules an action to be executed recursively after a specified relative due time.
+     * Schedules an action to be executed recursively after a specified relative or absolute due time.
      * @param {Mixed} state State passed to the action to be executed.
      * @param {Function} action Action to execute recursively. The last parameter passed to the action is used to trigger recursive scheduling of the action, passing in the recursive due time and invocation state.
-     * @param {Number}dueTime Relative time after which to execute the action for the first time.
+     * @param {Number | Date} dueTime Relative or absolute time after which to execute the action for the first time.
      * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
      */
-    schedulerProto.scheduleRecursiveWithRelativeAndState = function (state, dueTime, action) {
-      return this._scheduleRelative([state, action], dueTime, invokeRecDateRelative);
+    schedulerProto.scheduleRecursiveFuture = function (state, dueTime, action) {
+      return this.scheduleFuture([state, action], dueTime, invokeRecDate);
     };
 
-    /**
-     * Schedules an action to be executed recursively at a specified absolute due time.
-     * @param {Function} action Action to execute recursively. The parameter passed to the action is used to trigger recursive scheduling of the action at the specified absolute time.
-     * @param {Number}dueTime Absolute time at which to execute the action for the first time.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    schedulerProto.scheduleRecursiveWithAbsolute = function (dueTime, action) {
-      return this.scheduleRecursiveWithAbsoluteAndState(action, dueTime, scheduleInnerRecursive);
-    };
-
-    /**
-     * Schedules an action to be executed recursively at a specified absolute due time.
-     * @param {Mixed} state State passed to the action to be executed.
-     * @param {Function} action Action to execute recursively. The last parameter passed to the action is used to trigger recursive scheduling of the action, passing in the recursive due time and invocation state.
-     * @param {Number}dueTime Absolute time at which to execute the action for the first time.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    schedulerProto.scheduleRecursiveWithAbsoluteAndState = function (state, dueTime, action) {
-      return this._scheduleAbsolute([state, action], dueTime, invokeRecDateAbsolute);
-    };
   }(Scheduler.prototype));
 
   (function (schedulerProto) {
-
-    /**
-     * Schedules a periodic piece of work by dynamically discovering the scheduler's capabilities. The periodic task will be scheduled using window.setInterval for the base implementation.
-     * @param {Number} period Period for running the work periodically.
-     * @param {Function} action Action to be executed.
-     * @returns {Disposable} The disposable object used to cancel the scheduled recurring action (best effort).
-     */
-    Scheduler.prototype.schedulePeriodic = function (period, action) {
-      return this.schedulePeriodicWithState(null, period, action);
-    };
 
     /**
      * Schedules a periodic piece of work by dynamically discovering the scheduler's capabilities. The periodic task will be scheduled using window.setInterval for the base implementation.
@@ -647,7 +589,7 @@ var
      * @param {Function} action Action to be executed, potentially updating the state.
      * @returns {Disposable} The disposable object used to cancel the scheduled recurring action (best effort).
      */
-    Scheduler.prototype.schedulePeriodicWithState = function(state, period, action) {
+    Scheduler.prototype.schedulePeriodic = function(state, period, action) {
       if (typeof root.setInterval === 'undefined') { throw new NotSupportedError(); }
       period = normalizeTime(period);
       var s = state, id = root.setInterval(function () { s = action(s); }, period);
@@ -657,14 +599,16 @@ var
   }(Scheduler.prototype));
 
   var SchedulePeriodicRecursive = Rx.internals.SchedulePeriodicRecursive = (function () {
-    function tick(command, recurse) {
-      recurse(0, this._period);
-      try {
-        this._state = this._action(this._state);
-      } catch (e) {
-        this._cancel.dispose();
-        throw e;
-      }
+    function createTick(self) {
+      return function tick(command, recurse) {
+        recurse(0, self._period);
+        var state = tryCatch(self._action)(self._state);
+        if (state === errorObj) {
+          self._cancel.dispose();
+          thrower(state.e);
+        }
+        self._state = state;
+      };
     }
 
     function SchedulePeriodicRecursive(scheduler, state, period, action) {
@@ -677,7 +621,7 @@ var
     SchedulePeriodicRecursive.prototype.start = function () {
       var d = new SingleAssignmentDisposable();
       this._cancel = d;
-      d.setDisposable(this._scheduler.scheduleRecursiveWithRelativeAndState(0, this._period, tick.bind(this)));
+      d.setDisposable(this._scheduler.scheduleRecursiveFuture(0, this._period, createTick(this)));
 
       return d;
     };
@@ -686,44 +630,61 @@ var
   }());
 
   /** Gets a scheduler that schedules work immediately on the current thread. */
-  var immediateScheduler = Scheduler.immediate = (function () {
-    function scheduleNow(state, action) { return action(this, state); }
-    return new Scheduler(defaultNow, scheduleNow, notSupported, notSupported);
-  }());
+   var ImmediateScheduler = (function (__super__) {
+    inherits(ImmediateScheduler, __super__);
+    function ImmediateScheduler() {
+      __super__.call(this);
+    }
+
+    ImmediateScheduler.prototype.schedule = function (state, action) {
+      return disposableFixup(action(this, state));
+    };
+
+    return ImmediateScheduler;
+  }(Scheduler));
+
+  var immediateScheduler = Scheduler.immediate = new ImmediateScheduler();
 
   /**
    * Gets a scheduler that schedules work as soon as possible on the current thread.
    */
-  var currentThreadScheduler = Scheduler.currentThread = (function () {
+  var CurrentThreadScheduler = (function (__super__) {
     var queue;
 
     function runTrampoline () {
       while (queue.length > 0) {
-        var item = queue.shift();
+        var item = queue.dequeue();
         !item.isCancelled() && item.invoke();
       }
     }
 
-    function scheduleNow(state, action) {
+    inherits(CurrentThreadScheduler, __super__);
+    function CurrentThreadScheduler() {
+      __super__.call(this);
+    }
+
+    CurrentThreadScheduler.prototype.schedule = function (state, action) {
       var si = new ScheduledItem(this, state, action, this.now());
 
       if (!queue) {
-        queue = [si];
+        queue = new PriorityQueue(4);
+        queue.enqueue(si);
 
         var result = tryCatch(runTrampoline)();
         queue = null;
-        if (result === errorObj) { return thrower(result.e); }
+        if (result === errorObj) { thrower(result.e); }
       } else {
-        queue.push(si);
+        queue.enqueue(si);
       }
       return si.disposable;
-    }
+    };
 
-    var currentScheduler = new Scheduler(defaultNow, scheduleNow, notSupported, notSupported);
-    currentScheduler.scheduleRequired = function () { return !queue; };
+    CurrentThreadScheduler.prototype.scheduleRequired = function () { return !queue; };
 
-    return currentScheduler;
-  }());
+    return CurrentThreadScheduler;
+  }(Scheduler));
+
+  var currentThreadScheduler = Scheduler.currentThread = new CurrentThreadScheduler();
 
   var scheduleMethod, clearMethod;
 
@@ -759,7 +720,7 @@ var
 
     function runTask(handle) {
       if (currentlyRunning) {
-        localSetTimeout(function () { runTask(handle) }, 0);
+        localSetTimeout(function () { runTask(handle); }, 0);
       } else {
         var task = tasksByHandle[handle];
         if (task) {
@@ -767,12 +728,12 @@ var
           var result = tryCatch(task)();
           clearMethod(handle);
           currentlyRunning = false;
-          if (result === errorObj) { return thrower(result.e); }
+          if (result === errorObj) { thrower(result.e); }
         }
       }
     }
 
-    var reNative = RegExp('^' +
+    var reNative = new RegExp('^' +
       String(toString)
         .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         .replace(/toString| for [^\]]+/g, '.*?') + '$'
@@ -813,20 +774,14 @@ var
     } else if (postMessageSupported()) {
       var MSG_PREFIX = 'ms.rx.schedule' + Math.random();
 
-      function onGlobalPostMessage(event) {
+      var onGlobalPostMessage = function (event) {
         // Only if we're a match to avoid any other global events
         if (typeof event.data === 'string' && event.data.substring(0, MSG_PREFIX.length) === MSG_PREFIX) {
           runTask(event.data.substring(MSG_PREFIX.length));
         }
-      }
+      };
 
-      if (root.addEventListener) {
-        root.addEventListener('message', onGlobalPostMessage, false);
-      } else if (root.attachEvent) {
-        root.attachEvent('onmessage', onGlobalPostMessage);
-      } else {
-        root.onmessage = onGlobalPostMessage;
-      }
+      root.addEventListener('message', onGlobalPostMessage, false);
 
       scheduleMethod = function (action) {
         var id = nextHandle++;
@@ -878,35 +833,143 @@ var
   /**
    * Gets a scheduler that schedules work via a timed callback based upon platform.
    */
-  var timeoutScheduler = Scheduler.timeout = Scheduler['default'] = (function () {
+   var DefaultScheduler = (function (__super__) {
+     inherits(DefaultScheduler, __super__);
+     function DefaultScheduler() {
+       __super__.call(this);
+     }
 
-    function scheduleNow(state, action) {
-      var scheduler = this, disposable = new SingleAssignmentDisposable();
-      var id = scheduleMethod(function () {
-        !disposable.isDisposed && disposable.setDisposable(action(scheduler, state));
-      });
-      return new CompositeDisposable(disposable, disposableCreate(function () {
-        clearMethod(id);
-      }));
+     function scheduleAction(disposable, action, scheduler, state) {
+       return function schedule() {
+         disposable.setDisposable(Disposable._fixup(action(scheduler, state)));
+       };
+     }
+
+     function ClearDisposable(id) {
+       this._id = id;
+       this.isDisposed = false;
+     }
+
+     ClearDisposable.prototype.dispose = function () {
+       if (!this.isDisposed) {
+         this.isDisposed = true;
+         clearMethod(this._id);
+       }
+     };
+
+     function LocalClearDisposable(id) {
+       this._id = id;
+       this.isDisposed = false;
+     }
+
+     LocalClearDisposable.prototype.dispose = function () {
+       if (!this.isDisposed) {
+         this.isDisposed = true;
+         localClearTimeout(this._id);
+       }
+     };
+
+    DefaultScheduler.prototype.schedule = function (state, action) {
+      var disposable = new SingleAssignmentDisposable(),
+          id = scheduleMethod(scheduleAction(disposable, action, this, state));
+      return new BinaryDisposable(disposable, new ClearDisposable(id));
+    };
+
+    DefaultScheduler.prototype._scheduleFuture = function (state, dueTime, action) {
+      if (dueTime === 0) { return this.schedule(state, action); }
+      var disposable = new SingleAssignmentDisposable(),
+          id = localSetTimeout(scheduleAction(disposable, action, this, state), dueTime);
+      return new BinaryDisposable(disposable, new LocalClearDisposable(id));
+    };
+
+    return DefaultScheduler;
+  }(Scheduler));
+
+  var defaultScheduler = Scheduler['default'] = Scheduler.async = new DefaultScheduler();
+
+  function IndexedItem(id, value) {
+    this.id = id;
+    this.value = value;
+  }
+
+  IndexedItem.prototype.compareTo = function (other) {
+    var c = this.value.compareTo(other.value);
+    c === 0 && (c = this.id - other.id);
+    return c;
+  };
+
+  var PriorityQueue = Rx.internals.PriorityQueue = function (capacity) {
+    this.items = new Array(capacity);
+    this.length = 0;
+  };
+
+  var priorityProto = PriorityQueue.prototype;
+  priorityProto.isHigherPriority = function (left, right) {
+    return this.items[left].compareTo(this.items[right]) < 0;
+  };
+
+  priorityProto.percolate = function (index) {
+    if (index >= this.length || index < 0) { return; }
+    var parent = index - 1 >> 1;
+    if (parent < 0 || parent === index) { return; }
+    if (this.isHigherPriority(index, parent)) {
+      var temp = this.items[index];
+      this.items[index] = this.items[parent];
+      this.items[parent] = temp;
+      this.percolate(parent);
     }
+  };
 
-    function scheduleRelative(state, dueTime, action) {
-      var scheduler = this, dt = Scheduler.normalize(dueTime), disposable = new SingleAssignmentDisposable();
-      if (dt === 0) { return scheduler.scheduleWithState(state, action); }
-      var id = localSetTimeout(function () {
-        !disposable.isDisposed && disposable.setDisposable(action(scheduler, state));
-      }, dt);
-      return new CompositeDisposable(disposable, disposableCreate(function () {
-        localClearTimeout(id);
-      }));
+  priorityProto.heapify = function (index) {
+    +index || (index = 0);
+    if (index >= this.length || index < 0) { return; }
+    var left = 2 * index + 1,
+        right = 2 * index + 2,
+        first = index;
+    if (left < this.length && this.isHigherPriority(left, first)) {
+      first = left;
     }
-
-    function scheduleAbsolute(state, dueTime, action) {
-      return this.scheduleWithRelativeAndState(state, dueTime - this.now(), action);
+    if (right < this.length && this.isHigherPriority(right, first)) {
+      first = right;
     }
+    if (first !== index) {
+      var temp = this.items[index];
+      this.items[index] = this.items[first];
+      this.items[first] = temp;
+      this.heapify(first);
+    }
+  };
 
-    return new Scheduler(defaultNow, scheduleNow, scheduleRelative, scheduleAbsolute);
-  })();
+  priorityProto.peek = function () { return this.items[0].value; };
+
+  priorityProto.removeAt = function (index) {
+    this.items[index] = this.items[--this.length];
+    this.items[this.length] = undefined;
+    this.heapify();
+  };
+
+  priorityProto.dequeue = function () {
+    var result = this.peek();
+    this.removeAt(0);
+    return result;
+  };
+
+  priorityProto.enqueue = function (item) {
+    var index = this.length++;
+    this.items[index] = new IndexedItem(PriorityQueue.count++, item);
+    this.percolate(index);
+  };
+
+  priorityProto.remove = function (item) {
+    for (var i = 0; i < this.length; i++) {
+      if (this.items[i].value === item) {
+        this.removeAt(i);
+        return true;
+      }
+    }
+    return false;
+  };
+  PriorityQueue.count = 0;
 
   /**
    * Supports push-style iteration over an observable sequence.
@@ -1057,13 +1120,12 @@ var
       };
     }
 
-    function Observable(subscribe) {
+    function Observable() {
       if (Rx.config.longStackSupport && hasStacks) {
+        var oldSubscribe = this._subscribe;
         var e = tryCatch(thrower)(new Error()).e;
         this.stack = e.stack.substring(e.stack.indexOf('\n') + 1);
-        this._subscribe = makeSubscribe(this, subscribe);
-      } else {
-        this._subscribe = subscribe;
+        this._subscribe = makeSubscribe(this, oldSubscribe);
       }
     }
 
@@ -1076,7 +1138,7 @@ var
     */
     Observable.isObservable = function (o) {
       return o && isFunction(o.subscribe);
-    }
+    };
 
     /**
      *  Subscribes an o to the observable sequence.
@@ -1136,29 +1198,26 @@ var
     function setDisposable(s, state) {
       var ado = state[0], self = state[1];
       var sub = tryCatch(self.__subscribe).call(self, ado);
-
-      if (sub === errorObj) {
-        if(!ado.fail(errorObj.e)) { return thrower(errorObj.e); }
-      }
+      if (sub === errorObj && !ado.fail(errorObj.e)) { thrower(errorObj.e); }
       ado.setDisposable(fixSubscriber(sub));
-    }
-
-    function innerSubscribe(observer) {
-      var ado = new AutoDetachObserver(observer), state = [ado, this];
-
-      if (currentThreadScheduler.scheduleRequired()) {
-        currentThreadScheduler.scheduleWithState(state, setDisposable);
-      } else {
-        setDisposable(null, state);
-      }
-      return ado;
     }
 
     function AnonymousObservable(subscribe, parent) {
       this.source = parent;
       this.__subscribe = subscribe;
-      __super__.call(this, innerSubscribe);
+      __super__.call(this);
     }
+
+    AnonymousObservable.prototype._subscribe = function (o) {
+      var ado = new AutoDetachObserver(o), state = [ado, this];
+
+      if (currentThreadScheduler.scheduleRequired()) {
+        currentThreadScheduler.schedule(state, setDisposable);
+      } else {
+        setDisposable(null, state);
+      }
+      return ado;
+    };
 
     return AnonymousObservable;
 
@@ -1175,27 +1234,24 @@ var
     function setDisposable(s, state) {
       var ado = state[0], self = state[1];
       var sub = tryCatch(self.subscribeCore).call(self, ado);
-
-      if (sub === errorObj) {
-        if(!ado.fail(errorObj.e)) { return thrower(errorObj.e); }
-      }
+      if (sub === errorObj && !ado.fail(errorObj.e)) { thrower(errorObj.e); }
       ado.setDisposable(fixSubscriber(sub));
     }
 
-    function subscribe(observer) {
-      var ado = new AutoDetachObserver(observer), state = [ado, this];
+    function ObservableBase() {
+      __super__.call(this);
+    }
+
+    ObservableBase.prototype._subscribe = function (o) {
+      var ado = new AutoDetachObserver(o), state = [ado, this];
 
       if (currentThreadScheduler.scheduleRequired()) {
-        currentThreadScheduler.scheduleWithState(state, setDisposable);
+        currentThreadScheduler.schedule(state, setDisposable);
       } else {
         setDisposable(null, state);
       }
       return ado;
-    }
-
-    function ObservableBase() {
-      __super__.call(this, subscribe);
-    }
+    };
 
     ObservableBase.prototype.subscribeCore = notImplemented;
 

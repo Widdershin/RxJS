@@ -1,52 +1,58 @@
 (function () {
-  module('FromPromise');
+  /* jshint undef: true, unused: true */
+  /* globals QUnit, test, Rx, equal, ok, asyncTest, start, RSVP */
 
-  var TestScheduler = Rx.TestScheduler,
-    Observable = Rx.Observable;
+  QUnit.module('fromPromise');
+
+  var Observable = Rx.Observable,
+      TestScheduler = Rx.TestScheduler,
+      onNext = Rx.ReactiveTest.onNext,
+      onError = Rx.ReactiveTest.onError,
+      onCompleted = Rx.ReactiveTest.onCompleted;
 
   test('FromPromise Success Mock', function () {
     var scheduler = new TestScheduler();
 
     var xs = scheduler.createResolvedPromise(201, 1);
 
-    var results = scheduler.startWithCreate(function () {
-      return Observable.fromPromise(xs);
+    var results = scheduler.startScheduler(function () {
+      return Observable.fromPromise(xs, scheduler);
     });
 
     results.messages.assertEqual(
-      onNext(201, 1),
-      onCompleted(201)
+      onNext(202, 1),
+      onCompleted(202)
     );
   });
 
-  test('FromPromise Failure Mock', function () {
+  test('fromPromise Failure Mock', function () {
     var error = new Error();
 
     var scheduler = new TestScheduler();
 
     var xs = scheduler.createRejectedPromise(201, error);
 
-    var results = scheduler.startWithCreate(function () {
-      return Observable.fromPromise(xs);
+    var results = scheduler.startScheduler(function () {
+      return Observable.fromPromise(xs, scheduler);
     });
 
     results.messages.assertEqual(
-      onError(201, error)
+      onError(202, error)
     );
   });
 
-  asyncTest('Promise_Success', function () {
-    var promise = new RSVP.Promise(function (resolve, reject) {
+  asyncTest('fromPromise Success', function () {
+    var promise = new RSVP.Promise(function (resolve) {
       resolve(42);
     });
 
     var source = Observable.fromPromise(promise);
 
-    var subscription = source.subscribe(
+    source.subscribe(
       function (x) {
         equal(42, x);
       },
-      function (err) {
+      function () {
         ok(false);
       },
       function () {
@@ -55,7 +61,7 @@
       });
   });
 
-  asyncTest('Promise_Failure', function () {
+  asyncTest('promise Failure', function () {
     var error = new Error('woops');
 
     var promise = new RSVP.Promise(function (resolve, reject) {
@@ -64,12 +70,12 @@
 
     var source = Observable.fromPromise(promise);
 
-    var subscription = source.subscribe(
-      function (x) {
+    source.subscribe(
+      function () {
         ok(false);
       },
       function (err) {
-        strictEqual(err, error);
+        equal(err, error);
         start();
       },
       function () {

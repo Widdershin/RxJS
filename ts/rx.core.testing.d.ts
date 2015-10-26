@@ -1,28 +1,5 @@
 declare module Rx {
 
-    export module internals {
-        // Priority Queue for Scheduling
-        export interface PriorityQueue<TTime> {
-            length: number;
-
-            isHigherPriority(left: number, right: number): boolean;
-            percolate(index: number): void;
-            heapify(index: number): void;
-            peek(): ScheduledItem<TTime>;
-            removeAt(index: number): void;
-            dequeue(): ScheduledItem<TTime>;
-            enqueue(item: ScheduledItem<TTime>): void;
-            remove(item: ScheduledItem<TTime>): boolean;
-        }
-
-        interface PriorityQueueStatic {
-                new <T>(capacity: number) : PriorityQueue<T>;
-                count: number;
-        }
-
-        export var PriorityQueue : PriorityQueueStatic;
-    }
-
     export interface VirtualTimeScheduler<TAbsolute, TRelative> extends IScheduler {
         /**
          * Adds a relative time value to an absolute time value.
@@ -37,14 +14,14 @@ declare module Rx {
          * @param {Any} The absolute time.
          * @returns {Number} The absolute time in ms
          */
-        toDateTimeOffset(duetime: TAbsolute): number;
+        toAbsoluteTime(duetime: TAbsolute): number;
 
         /**
          * Converts the TimeSpan value to a relative virtual time value.
          * @param {Number} timeSpan TimeSpan value to convert.
          * @return {Number} Corresponding relative virtual time value.
          */
-        toRelative(duetime: number): TRelative;
+        toRelativeTime(duetime: number): TRelative;
 
         /**
          * Starts the virtual time scheduler.
@@ -137,7 +114,7 @@ declare module Rx {
          * @param {Mixed} value Value that was produced.
          * @param {Function} comparer An optional comparer.
          */
-        new (time: number, value: any, equalityComparer?: ((value1: any, value2: any) => boolean)): Recorded;
+        new (time: number, value: any, equalityComparer?: _Comparer<any, boolean>): Recorded;
     }
 
     export var Recorded: RecordedStatic;

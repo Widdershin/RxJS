@@ -56,7 +56,7 @@ source
   });
 ```
 
-Now what if this data were to come as some sort of event, for example a stream, such as as a WebSocket, then we could pretty much write the same query to iterate our data, with very little change.
+Now what if this data were to come as some sort of event, for example a stream, such as a WebSocket, then we could pretty much write the same query to iterate our data, with very little change.
 
 ```js
 /* Get stock data somehow */
@@ -69,7 +69,7 @@ var subscription = source
   .map(function (quote) {
     return quote.price;
   })
-  .forEach(
+  .subscribe(
     function (price) {
       console.log('Prices higher than $30: $' + price);
     },
@@ -81,7 +81,7 @@ var subscription = source
 subscription.dispose();
 ```
 
-The only difference is that we can handle the errors inline with our subscription.  And when we're no longer interested in receiving the data as it comes streaming in, we call `dispose` on our subscription.
+The only difference is that we can handle the errors inline with our subscription.  And when we're no longer interested in receiving the data as it comes streaming in, we call `dispose` on our subscription.  Note the use of `subscribe` instead of `forEach`.  We could also use `forEach` which is an alias for `subscribe` but we highly suggest you use `subscribe`.
 
 ## Batteries Included ##
 
@@ -129,7 +129,7 @@ To give you an idea about rich composition, we can create an autocompletion serv
 
 First, we'll reference the JavaScript files, including jQuery, although RxJS has no dependencies on jQuery...
 ```html
-<script src="http://code.jquery.com/jquery.js"></script>
+<script src="https://code.jquery.com/jquery.js"></script>
 <script src="rx.lite.js"></script>
 ```
 Next, we'll get the user input from an input, listening to the keyup event by using the `Rx.Observable.fromEvent` method.  This will either use the event binding from [jQuery](http://jquery.com), [Zepto](http://zeptojs.com/), [AngularJS](https://angularjs.org/), [Backbone.js](http://backbonejs.org/) and [Ember.js](http://emberjs.com/) if available, and if not, falls back to the native event binding.  This gives you consistent ways of thinking of events depending on your framework, so there are no surprises.
@@ -177,10 +177,10 @@ var suggestions = distinct
   .flatMapLatest(searchWikipedia);
 ```
 
-Finally, we call the `forEach` method on our observable sequence to start pulling data.
+Finally, we call the `subscribe` method on our observable sequence to start pulling data.
 
 ```js
-suggestions.forEach(
+suggestions.subscribe(
   function (data) {
     $results
       .empty()
@@ -202,11 +202,11 @@ And there you have it!
 
 Please check out:
 
- - [Our Code of Conduct](https://github.com/Reactive-Extensions/RxJS/tree/code-of-conduct.md)
+ - [Our Code of Conduct](https://github.com/Reactive-Extensions/RxJS/tree/master/code-of-conduct.md)
  - [The full documentation](https://github.com/Reactive-Extensions/RxJS/tree/master/doc)
  - [Our many great examples](https://github.com/Reactive-Extensions/RxJS/tree/master/examples)
  - [Our design guidelines](https://github.com/Reactive-Extensions/RxJS/tree/master/doc/designguidelines)
- - [Our contribution guidelines](https://github.com/Reactive-Extensions/RxJS/tree/contributing.md)
+ - [Our contribution guidelines](https://github.com/Reactive-Extensions/RxJS/tree/master/contributing.md)
  - [Our complete Unit Tests](https://github.com/Reactive-Extensions/RxJS/tree/master/tests)
  - [Our recipes](https://github.com/Reactive-Extensions/RxJS/wiki/Recipes)
 

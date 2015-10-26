@@ -132,22 +132,21 @@
   <script src="observable/never.js"></script>
   <script src="observable/range.js"></script>
   <script src="observable/repeat.js"></script>
-  <script src="observable/repeatproto.js"></script>
   <script src="observable/return.js"></script>
   <script src="observable/throw.js"></script>
   <script src="observable/using.js"></script>
 
   <!-- Multiple -->
 
-  <script src="observable/ambproto.js"></script>
+  <script src="observable/amb.js"></script>
   <script src="observable/catch.js"></script>
-  <script src="observable/combinelatestproto.js"></script>
-  <script src="observable/concatproto.js"></script>
+  <script src="observable/combinelatest.js"></script>
+  <script src="observable/concat.js"></script>
   <script src="observable/merge.js"></script>
-  <script src="observable/mergeproto.js"></script>
-  <script src="observable/mergeobservable.js"></script>
+  <script src="observable/mergedelayerror.js"></script>
+  <script src="observable/mergeconcat.js"></script>
+  <script src="observable/mergeall.js"></script>
   <script src="observable/onerrorresumenext.js"></script>
-  <script src="observable/onerrorresumenextproto.js"></script>
   <script src="observable/skipuntil.js"></script>
   <script src="observable/switch.js"></script>
   <script src="observable/takeuntil.js"></script>
@@ -176,6 +175,7 @@
   <!-- Standard Query Operators -->
   <script src="observable/concatmap.js"></script>
   <script src="observable/concatmapobserver.js"></script>
+  <script src="observable/defaultifempty.js"></script>
   <script src="observable/groupby.js"></script>
   <script src="observable/groupbyuntil.js"></script>
   <script src="observable/pluck.js"></script>
@@ -212,6 +212,8 @@
   <script src="observable/find.js"></script>
   <script src="observable/toset.js"></script>
   <script src="observable/tomap.js"></script>
+  <script src="observable/slice.js"></script>
+  <script src="observable/lastindexof.js"></script>
 
   <!-- Async operators -->
   <script src="observable/toasync.js"></script>
@@ -247,7 +249,6 @@
   <script src="observable/partition.js"></script>
 
   <!-- Experimental operators -->
-  <script src="observable/forkjoinproto.js"></script>
   <script src="observable/forkjoin.js"></script>
   <script src="observable/expand.js"></script>
   <script src="observable/let.js"></script>
@@ -257,6 +258,7 @@
   <script src="observable/dowhile.js"></script>
   <script src="observable/case.js"></script>
   <script src="observable/for.js"></script>
+  <script src="observable/spawn.js"></script>
 
   <!-- Join patterns operators -->
   <script src="observable/when.js"></script>
@@ -275,10 +277,8 @@
   <script src="observable/timestamp.js"></script>
   <script src="observable/sample.js"></script>
   <script src="observable/timeout.js"></script>
-  <script src="observable/timeoutwithselector.js"></script>
   <script src="observable/generatewithrelativetime.js"></script>
   <script src="observable/generatewithabsolutetime.js"></script>
-  <script src="observable/delaywithselector.js"></script>
   <script src="observable/takelastbufferwithtime.js"></script>
   <script src="observable/takewithtime.js"></script>
   <script src="observable/skipwithtime.js"></script>
@@ -287,6 +287,7 @@
   <script src="observable/skipuntilwithtime.js"></script>
   <script src="observable/takeuntilwithtime.js"></script>
   <script src="observable/delaysubscription.js"></script>
+  <script src="observable/throttle.js"></script>
 
   <!-- Transducers -->
   <script src="observable/transduce.js"></script>

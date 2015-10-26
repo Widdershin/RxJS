@@ -8,10 +8,5 @@
     CompositeDisposable = Rx.CompositeDisposable,
     AbstractObserver = Rx.internals.AbstractObserver,
     noop = Rx.helpers.noop,
-    defaultComparer = Rx.internals.isEqual,
     inherits = Rx.internals.inherits,
-    Enumerable = Rx.internals.Enumerable,
-    Enumerator = Rx.internals.Enumerator,
-    $iterator$ = Rx.iterator,
-    doneEnumerator = Rx.doneEnumerator,
-    bindCallback = Rx.internals.bindCallback;
+    isFunction = Rx.helpers.isFunction;

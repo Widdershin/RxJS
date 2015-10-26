@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
+// Copyright (c) Microsoft, All rights reserved. See License.txt in the project root for license information.
 
 ;(function (factory) {
   var objectTypes = {
@@ -6,15 +6,18 @@
     'object': true
   };
 
-  var
-    freeExports = objectTypes[typeof exports] && exports && !exports.nodeType && exports,
-    freeSelf = objectTypes[typeof self] && self.Object && self,
-    freeWindow = objectTypes[typeof window] && window && window.Object && window,
-    freeModule = objectTypes[typeof module] && module && !module.nodeType && module,
-    moduleExports = freeModule && freeModule.exports === freeExports && freeExports,
-    freeGlobal = freeExports && freeModule && typeof global == 'object' && global && global.Object && global;
+  function checkGlobal(value) {
+    return (value && value.Object === Object) ? value : null;
+  }
 
-  var root = root = freeGlobal || ((freeWindow !== (this && this.window)) && freeWindow) || freeSelf || this;
+  var freeExports = (objectTypes[typeof exports] && exports && !exports.nodeType) ? exports : null;
+  var freeModule = (objectTypes[typeof module] && module && !module.nodeType) ? module : null;
+  var freeGlobal = checkGlobal(freeExports && freeModule && typeof global === 'object' && global);
+  var freeSelf = checkGlobal(objectTypes[typeof self] && self);
+  var freeWindow = checkGlobal(objectTypes[typeof window] && window);
+  var moduleExports = (freeModule && freeModule.exports === freeExports) ? freeExports : null;
+  var thisGlobal = checkGlobal(objectTypes[typeof this] && this);
+  var root = freeGlobal || ((freeWindow !== (thisGlobal && thisGlobal.window)) && freeWindow) || freeSelf || thisGlobal || Function('return this')();
 
   // Because of build optimizers
   if (typeof define === 'function' && define.amd) {
@@ -38,13 +41,30 @@
     CompositeDisposable = Rx.CompositeDisposable,
     AbstractObserver = Rx.internals.AbstractObserver,
     noop = Rx.helpers.noop,
-    defaultComparer = Rx.internals.isEqual,
     inherits = Rx.internals.inherits,
-    Enumerable = Rx.internals.Enumerable,
-    Enumerator = Rx.internals.Enumerator,
-    $iterator$ = Rx.iterator,
-    doneEnumerator = Rx.doneEnumerator,
-    bindCallback = Rx.internals.bindCallback;
+    isFunction = Rx.helpers.isFunction;
+
+  var errorObj = {e: {}};
+  
+  function tryCatcherGen(tryCatchTarget) {
+    return function tryCatcher() {
+      try {
+        return tryCatchTarget.apply(this, arguments);
+      } catch (e) {
+        errorObj.e = e;
+        return errorObj;
+      }
+    };
+  }
+
+  var tryCatch = Rx.internals.tryCatch = function tryCatch(fn) {
+    if (!isFunction(fn)) { throw new TypeError('fn must be a function'); }
+    return tryCatcherGen(fn);
+  };
+
+  function thrower(e) {
+    throw e;
+  }
 
   var Map = root.Map || (function () {
     function Map() {
@@ -55,7 +75,7 @@
 
     Map.prototype['delete'] = function (key) {
       var i = this._keys.indexOf(key);
-      if (i === -1) { return false }
+      if (i === -1) { return false; }
       this._values.splice(i, 1);
       this._keys.splice(i, 1);
       this.size--;
@@ -115,26 +135,25 @@
   };
 
   function Plan(expression, selector) {
-      this.expression = expression;
-      this.selector = selector;
+    this.expression = expression;
+    this.selector = selector;
+  }
+
+  function handleOnError(o) { return function (e) { o.onError(e); }; }
+  function handleOnNext(self, observer) {
+    return function onNext () {
+      var result = tryCatch(self.selector).apply(self, arguments);
+      if (result === errorObj) { return observer.onError(result.e); }
+      observer.onNext(result);
+    };
   }
 
   Plan.prototype.activate = function (externalSubscriptions, observer, deactivate) {
-    var self = this;
-    var joinObservers = [];
+    var joinObservers = [], errHandler = handleOnError(observer);
     for (var i = 0, len = this.expression.patterns.length; i < len; i++) {
-      joinObservers.push(planCreateObserver(externalSubscriptions, this.expression.patterns[i], observer.onError.bind(observer)));
+      joinObservers.push(planCreateObserver(externalSubscriptions, this.expression.patterns[i], errHandler));
     }
-    var activePlan = new ActivePlan(joinObservers, function () {
-      var result;
-      try {
-        result = self.selector.apply(self, arguments);
-      } catch (e) {
-        observer.onError(e);
-        return;
-      }
-      observer.onNext(result);
-    }, function () {
+    var activePlan = new ActivePlan(joinObservers, handleOnNext(this, observer), function () {
       for (var j = 0, jlen = joinObservers.length; j < jlen; j++) {
         joinObservers[j].removeActivePlan(activePlan);
       }
@@ -217,7 +236,7 @@
     JoinObserverPrototype.next = function (notification) {
       if (!this.isDisposed) {
         if (notification.kind === 'E') {
-          return this.onError(notification.exception);
+          return this.onError(notification.error);
         }
         this.queue.push(notification);
         var activePlans = this.activePlans.slice(0);

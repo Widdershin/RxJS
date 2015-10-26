@@ -3,37 +3,31 @@
    *  Observers can subscribe to the subject to receive the last (or initial) value and all subsequent notifications.
    */
   var BehaviorSubject = Rx.BehaviorSubject = (function (__super__) {
-    function subscribe(observer) {
-      checkDisposed(this);
-      if (!this.isStopped) {
-        this.observers.push(observer);
-        observer.onNext(this.value);
-        return new InnerSubscription(this, observer);
-      }
-      if (this.hasError) {
-        observer.onError(this.error);
-      } else {
-        observer.onCompleted();
-      }
-      return disposableEmpty;
-    }
-
     inherits(BehaviorSubject, __super__);
-
-    /**
-     *  Initializes a new instance of the BehaviorSubject class which creates a subject that caches its last value and starts with the specified value.
-     *  @param {Mixed} value Initial value sent to observers when no other value has been received by the subject yet.
-     */
     function BehaviorSubject(value) {
-      __super__.call(this, subscribe);
-      this.value = value,
-      this.observers = [],
-      this.isDisposed = false,
-      this.isStopped = false,
+      __super__.call(this);
+      this.value = value;
+      this.observers = [];
+      this.isDisposed = false;
+      this.isStopped = false;
       this.hasError = false;
     }
 
-    addProperties(BehaviorSubject.prototype, Observer, {
+    addProperties(BehaviorSubject.prototype, Observer.prototype, {
+      _subscribe: function (o) {
+        checkDisposed(this);
+        if (!this.isStopped) {
+          this.observers.push(o);
+          o.onNext(this.value);
+          return new InnerSubscription(this, o);
+        }
+        if (this.hasError) {
+          o.onError(this.error);
+        } else {
+          o.onCompleted();
+        }
+        return disposableEmpty;
+      },
       /**
        * Gets the current value or throws an exception.
        * Value is frozen after onCompleted is called.
@@ -42,11 +36,9 @@
        * @returns {Mixed} The initial value passed to the constructor until onNext is called; after which, the last value passed to onNext.
        */
       getValue: function () {
-          checkDisposed(this);
-          if (this.hasError) {
-              throw this.error;
-          }
-          return this.value;
+        checkDisposed(this);
+        if (this.hasError) { thrower(this.error); }
+        return this.value;
       },
       /**
        * Indicates whether the subject has observers subscribed to it.
@@ -102,7 +94,7 @@
         this.isDisposed = true;
         this.observers = null;
         this.value = null;
-        this.exception = null;
+        this.error = null;
       }
     });
 

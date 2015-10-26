@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
+// Copyright (c) Microsoft, All rights reserved. See License.txt in the project root for license information.
 
 ;(function (factory) {
   var objectTypes = {
@@ -6,15 +6,18 @@
     'object': true
   };
 
-  var
-    freeExports = objectTypes[typeof exports] && exports && !exports.nodeType && exports,
-    freeSelf = objectTypes[typeof self] && self.Object && self,
-    freeWindow = objectTypes[typeof window] && window && window.Object && window,
-    freeModule = objectTypes[typeof module] && module && !module.nodeType && module,
-    moduleExports = freeModule && freeModule.exports === freeExports && freeExports,
-    freeGlobal = freeExports && freeModule && typeof global == 'object' && global && global.Object && global;
+  function checkGlobal(value) {
+    return (value && value.Object === Object) ? value : null;
+  }
 
-  var root = root = freeGlobal || ((freeWindow !== (this && this.window)) && freeWindow) || freeSelf || this;
+  var freeExports = (objectTypes[typeof exports] && exports && !exports.nodeType) ? exports : null;
+  var freeModule = (objectTypes[typeof module] && module && !module.nodeType) ? module : null;
+  var freeGlobal = checkGlobal(freeExports && freeModule && typeof global === 'object' && global);
+  var freeSelf = checkGlobal(objectTypes[typeof self] && self);
+  var freeWindow = checkGlobal(objectTypes[typeof window] && window);
+  var moduleExports = (freeModule && freeModule.exports === freeExports) ? freeExports : null;
+  var thisGlobal = checkGlobal(objectTypes[typeof this] && this);
+  var root = freeGlobal || ((freeWindow !== (thisGlobal && thisGlobal.window)) && freeWindow) || freeSelf || thisGlobal || Function('return this')();
 
   // Because of build optimizers
   if (typeof define === 'function' && define.amd) {
@@ -30,26 +33,29 @@
 
   // Aliases
   var Observable = Rx.Observable,
-    observableProto = Observable.prototype,
     observableFromPromise = Observable.fromPromise,
     observableThrow = Observable.throwError,
     AnonymousObservable = Rx.AnonymousObservable,
+    ObservableBase = Rx.ObservableBase,
     AsyncSubject = Rx.AsyncSubject,
     disposableCreate = Rx.Disposable.create,
     CompositeDisposable = Rx.CompositeDisposable,
     immediateScheduler = Rx.Scheduler.immediate,
-    timeoutScheduler = Rx.Scheduler['default'],
+    defaultScheduler = Rx.Scheduler['default'],
+    inherits = Rx.internals.inherits,
     isScheduler = Rx.Scheduler.isScheduler,
     isPromise = Rx.helpers.isPromise,
-    isFunction = Rx.helpers.isFunction;
+    isFunction = Rx.helpers.isFunction,
+    isIterable = Rx.helpers.isIterable,
+    isArrayLike = Rx.helpers.isArrayLike;
 
   Observable.wrap = function (fn) {
-    createObservable.__generatorFunction__ = fn;
-    return createObservable;
-
     function createObservable() {
       return Observable.spawn.call(this, fn.apply(this, arguments));
     }
+
+    createObservable.__generatorFunction__ = fn;
+    return createObservable;
   };
 
   var spawn = Observable.spawn = function () {
@@ -65,13 +71,13 @@
         return o.onCompleted();
       }
 
-      processGenerator();
-
       function processGenerator(res) {
         var ret = tryCatch(gen.next).call(gen, res);
         if (ret === errorObj) { return o.onError(ret.e); }
         next(ret);
       }
+
+      processGenerator();
 
       function onError(err) {
         var ret = tryCatch(gen.next).call(gen, err);
@@ -85,9 +91,16 @@
           o.onCompleted();
           return;
         }
-        var value = toObservable.call(self, ret.value);
-        if (Observable.isObservable(value)) {
-          g.add(value.subscribe(processGenerator, onError));
+        var obs = toObservable.call(self, ret.value);
+        var value = null;
+        var hasValue = false;
+        if (Observable.isObservable(obs)) {
+          g.add(obs.subscribe(function(val) {
+            hasValue = true;
+            value = val;
+          }, onError, function() {
+            hasValue && processGenerator(value);
+          }));
         } else {
           onError(new TypeError('type not supported'));
         }
@@ -95,78 +108,86 @@
 
       return g;
     });
+  };
+
+  function toObservable(obj) {
+    if (!obj) { return obj; }
+    if (Observable.isObservable(obj)) { return obj; }
+    if (isPromise(obj)) { return Observable.fromPromise(obj); }
+    if (isGeneratorFunction(obj) || isGenerator(obj)) { return spawn.call(this, obj); }
+    if (isFunction(obj)) { return thunkToObservable.call(this, obj); }
+    if (isArrayLike(obj) || isIterable(obj)) { return arrayToObservable.call(this, obj); }
+    if (isObject(obj)) {return objectToObservable.call(this, obj);}
+    return obj;
   }
 
-function toObservable(obj) {
-  if (!obj) { return obj; }
-  if (Observable.isObservable(obj)) { return obj; }
-  if (isPromise(obj)) { return Observable.fromPromise(obj); }
-  if (isGeneratorFunction(obj) || isGenerator(obj)) { return spawn.call(this, obj); }
-  if (isFunction(obj)) { return thunkToObservable.call(this, obj); }
-  if (isArrayLike(obj) || isIterable(obj)) { return arrayToObservable.call(this, obj); }
-  if (isObject(obj)) {return objectToObservable.call(this, obj);}
-  return obj;
-}
+  function arrayToObservable (obj) {
+    return Observable.from(obj).concatMap(function(o) {
+      if(Observable.isObservable(o) || isObject(o)) {
+        return toObservable.call(null, o);
+      } else {
+        return Rx.Observable.just(o);
+      }
+    }).toArray();
+  }
 
-function arrayToObservable (obj) {
-  return Observable.from(obj)
-      .flatMap(toObservable)
-      .toArray();
-}
+  function objectToObservable (obj) {
+    var results = new obj.constructor(), keys = Object.keys(obj), observables = [];
+    for (var i = 0, len = keys.length; i < len; i++) {
+      var key = keys[i];
+      var observable = toObservable.call(this, obj[key]);
 
-function objectToObservable (obj) {
-  var results = new obj.constructor(), keys = Object.keys(obj), observables = [];
-  for (var i = 0, len = keys.length; i < len; i++) {
-    var key = keys[i];
-    var observable = toObservable.call(this, obj[key]);
+      if(observable && Observable.isObservable(observable)) {
+        defer(observable, key);
+      } else {
+        results[key] = obj[key];
+      }
+    }
 
-    if(observable && Observable.isObservable(observable)) {
-      defer(observable, key);
-    } else {
-      results[key] = obj[key];
+    return Observable.forkJoin.apply(Observable, observables).map(function() {
+      return results;
+    });
+
+
+    function defer (observable, key) {
+      results[key] = undefined;
+      observables.push(observable.map(function (next) {
+        results[key] = next;
+      }));
     }
   }
 
-  return Observable.forkJoin.apply(Observable, observables).map(function() {
-    return results;
-  });
-
-
-  function defer (observable, key) {
-    results[key] = undefined;
-    observables.push(observable.map(function (next) {
-      results[key] = next;
-    }));
-  }
-}
-
-function thunkToObservable(fn) {
-  var self = this;
-  return new AnonymousObservable(function (o) {
-    fn.call(self, function () {
-      var err = arguments[0], res = arguments[1];
-      if (err) { return o.onError(err); }
-      if (arguments.length > 2) {
-        var args = [];
-        for (var i = 1, len = arguments.length; i < len; i++) { args.push(arguments[i]); }
-        res = args;
-      }
-      o.onNext(res);
-      o.onCompleted();
+  function thunkToObservable(fn) {
+    var self = this;
+    return new AnonymousObservable(function (o) {
+      fn.call(self, function () {
+        var err = arguments[0], res = arguments[1];
+        if (err) { return o.onError(err); }
+        if (arguments.length > 2) {
+          var args = [];
+          for (var i = 1, len = arguments.length; i < len; i++) { args.push(arguments[i]); }
+          res = args;
+        }
+        o.onNext(res);
+        o.onCompleted();
+      });
     });
-  });
-}
+  }
 
-function isGenerator(obj) {
-  return isFunction (obj.next) && isFunction (obj.throw);
-}
+  function isGenerator(obj) {
+    return isFunction (obj.next) && isFunction (obj.throw);
+  }
 
-function isGeneratorFunction(obj) {
-  var ctor = obj.constructor;
-  if (!ctor) { return false; }
-  if (ctor.name === 'GeneratorFunction' || ctor.displayName === 'GeneratorFunction') { return true; }
-  return isGenerator(ctor.prototype);
-}
+  function isGeneratorFunction(obj) {
+    var ctor = obj.constructor;
+    if (!ctor) { return false; }
+    if (ctor.name === 'GeneratorFunction' || ctor.displayName === 'GeneratorFunction') { return true; }
+    return isGenerator(ctor.prototype);
+  }
+
+  function isObject(val) {
+    return Object == val.constructor;
+  }
 
   /**
    * Invokes the specified function asynchronously on the specified scheduler, surfacing the result through an observable sequence.
@@ -195,14 +216,10 @@ function isGeneratorFunction(obj) {
    * @returns {Observable} An observable sequence exposing the function's result value, or an exception.
    */
   Observable.startAsync = function (functionAsync) {
-    var promise;
-    try {
-      promise = functionAsync();
-    } catch (e) {
-      return observableThrow(e);
-    }
+    var promise = tryCatch(functionAsync)();
+    if (promise === errorObj) { return observableThrow(promise.e); }
     return observableFromPromise(promise);
-  }
+  };
 
   return Rx;
 }));

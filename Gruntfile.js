@@ -5,7 +5,7 @@ module.exports = function (grunt) {
       meta: {
           banner:
             '/*'+
-            'Copyright (c) Microsoft Open Technologies, Inc.  All rights reserved.\r\n' +
+            'Copyright (c) Microsoft.  All rights reserved.\r\n' +
             'Microsoft Open Technologies. Licensed under the Apache License, Version 2.0 (the "License"); you.\r\n' +
             'may not use this file except in compliance with the License. You may.\r\n' +
             'obtain a copy of the License at.\r\n\r\n' +
@@ -36,6 +36,7 @@ module.exports = function (grunt) {
               'src/core/disposables/compositedisposable.js',
               'src/core/disposables/disposable.js',
               'src/core/disposables/booleandisposable.js',
+              'src/core/disposables/binarydisposable.js',
 
               // Schedulers
               'src/core/concurrency/scheduleditem.js',
@@ -46,6 +47,7 @@ module.exports = function (grunt) {
               'src/core/concurrency/immediatescheduler.js',
               'src/core/concurrency/currentthreadscheduler.js',
               'src/core/concurrency/defaultscheduler.js',
+              'src/core/internal/priorityqueue.js',
 
               // Observer
               'src/core/observer-lite.js',
@@ -105,7 +107,6 @@ module.exports = function (grunt) {
               'src/core/internal/isequal.js',
 
               'src/core/concurrency/scheduleperiodicrecursive.js',
-              'src/core/internal/priorityqueue.js',
               'src/core/concurrency/virtualtimescheduler.js',
 
               'src/core/testing/reactivetest.js',
@@ -144,6 +145,7 @@ module.exports = function (grunt) {
               'src/core/disposables/compositedisposable.js',
               'src/core/disposables/disposable.js',
               'src/core/disposables/booleandisposable.js',
+              'src/core/disposables/binarydisposable.js',
               'src/core/disposables/refcountdisposable.js',
               'src/core/disposables/scheduleddisposable.js',
               'src/core/concurrency/scheduleditem.js',
@@ -201,21 +203,21 @@ module.exports = function (grunt) {
               'src/core/linq/observable/catchproto.js',
               'src/core/linq/observable/catch.js',
               'src/core/linq/observable/combinelatestproto.js',
-              'src/core/linq/observable/combinelatest.js',
+              'src/core/perf/operators/combinelatest.js',
               'src/core/linq/observable/concatproto.js',
               'src/core/perf/operators/concat.js',
               'src/core/linq/observable/concatall.js',
-              'src/core/perf/operators/mergeproto.js',
+              'src/core/perf/operators/mergeconcat.js',
               'src/core/linq/observable/merge.js',
               'src/core/perf/operators/mergeall.js',
               'src/core/linq/observable/mergedelayerror.js',
               'src/core/linq/observable/onerrorresumenextproto.js',
               'src/core/linq/observable/onerrorresumenext.js',
-              'src/core/linq/observable/skipuntil.js',
+              'src/core/perf/operators/skipuntil.js',
               'src/core/perf/operators/switch.js',
               'src/core/perf/operators/takeuntil.js',
-              'src/core/linq/observable/withlatestfrom.js',
-              'src/core/linq/observable/zipproto.js',
+              'src/core/perf/operators/withlatestfrom.js',
+              'src/core/perf/operators/zip.js',
               'src/core/linq/observable/zip.js',
               'src/core/linq/observable/zipiterable.js',
 
@@ -252,7 +254,7 @@ module.exports = function (grunt) {
               'src/core/perf/operators/flatmaplatest.js',
               'src/core/perf/operators/skip.js',
               'src/core/linq/observable/skipwhile.js',
-              'src/core/linq/observable/take.js',
+              'src/core/perf/operators/take.js',
               'src/core/linq/observable/takewhile.js',
               'src/core/perf/operators/filter.js',
 
@@ -282,6 +284,8 @@ module.exports = function (grunt) {
               'src/core/linq/observable/findindex.js', // _findvalue, where
               'src/core/linq/observable/toset.js',
               'src/core/linq/observable/tomap.js',
+              'src/core/linq/observable/slice.js',
+              'src/core/linq/observable/lastindexof.js',
 
               // Async operators
               'src/core/linq/observable/spawn.js',
@@ -311,8 +315,6 @@ module.exports = function (grunt) {
               'src/core/linq/observable/replay.js', // multicast, ReplaySubject
               'src/core/linq/observable/sharereplay.js',
               'src/core/subjects/innersubscription.js',
-              'src/core/subjects/behaviorsubject.js',
-              'src/core/subjects/replaysubject.js',
               'src/core/linq/connectableobservable.js',
               'src/core/linq/observable/singleinstance.js',
 
@@ -348,9 +350,9 @@ module.exports = function (grunt) {
               'src/core/linq/observable/when.js', // CompositeDisposable
 
               // Time based operators
-              'src/core/linq/observable/_observabletimerdate.js', // AnonymousObservable
+              'src/core/linq/observable/_observabletimer.js', // AnonymousObservable
               'src/core/linq/observable/_observabletimerdateandperiod.js', // AnonymousObservable, normalizeTime
-              'src/core/linq/observable/_observabletimertimespan.js', // AnonymousObservable, normalizeTime
+
               'src/core/linq/observable/_observabletimertimespanandperiod.js', // AnonymousObservable, defer, _observabletimerdateandperiod
               'src/core/linq/observable/interval.js', // timeoutScheduler, _observabletimertimespanandperiod
               'src/core/linq/observable/timer.js', // timeoutScheduler, _observabletimerdate, _observabletimerdateandperiod, _observabletimertimespan, _observabletimertimespanandperiod
@@ -367,9 +369,6 @@ module.exports = function (grunt) {
               'src/core/linq/observable/generatewithabsolutetime.js', // timeoutScheduler, AnonymousObservable
               'src/core/linq/observable/generatewithrelativetime.js', // timeoutScheduler, AnonymousObservable
               'src/core/linq/observable/delaysubscription.js', // delayWithSelector, timer, empty
-              'src/core/linq/observable/delaywithselector.js',
-              'src/core/linq/observable/timeoutwithselector.js',
-              'src/core/linq/observable/debouncewithselector.js',
               'src/core/linq/observable/skiplastwithtime.js',
               'src/core/linq/observable/takelastwithtime.js',
               'src/core/linq/observable/takelastbufferwithtime.js',
@@ -377,7 +376,7 @@ module.exports = function (grunt) {
               'src/core/linq/observable/skipwithtime.js',
               'src/core/linq/observable/skipuntilwithtime.js',
               'src/core/linq/observable/takeuntilwithtime.js',
-              'src/core/linq/observable/throttlefirst.js',
+              'src/core/linq/observable/throttle.js',
 
               // Transducers
               'src/core/linq/observable/transduce.js',
@@ -391,12 +390,24 @@ module.exports = function (grunt) {
               'src/core/concurrency/virtualtimescheduler.js',
               'src/core/concurrency/historicalscheduler.js',
 
+              'src/core/testing/reactivetest.js',
+              'src/core/testing/recorded.js',
+              'src/core/testing/subscription.js',
+              'src/core/testing/mockdisposable.js',
+              'src/core/testing/mockobserver.js',
+              'src/core/testing/mockpromise.js',
+              'src/core/testing/hotobservable.js',
+              'src/core/testing/coldobservable.js',
+              'src/core/testing/testscheduler.js',
+
               'src/core/anonymousobservable.js',
               'src/core/autodetachobserver.js',
               'src/core/linq/groupedobservable.js',
               'src/core/subjects/innersubscription.js',
               'src/core/subjects/subject.js',
               'src/core/subjects/asyncsubject.js',
+              'src/core/subjects/behaviorsubject.js',
+              'src/core/subjects/replaysubject.js',
               'src/core/subjects/anonymoussubject.js',
               'src/core/backpressure/pauser.js',
               'src/core/headers/exports.js',
@@ -419,6 +430,7 @@ module.exports = function (grunt) {
               'src/core/longstacktraces/longstackbegin.js',
               'src/core/longstacktraces/longstacktraces.js',
 
+              'src/core/internal/polyfills.js',
               'src/core/internal/errors.js',
 
               'src/core/headers/enumeratorheader.js',
@@ -427,11 +439,11 @@ module.exports = function (grunt) {
               'src/core/internal/dontenums.js',
               'src/core/internal/isequal.js',
               'src/core/internal/util.js',
-              'src/core/internal/polyfills.js',
               'src/core/internal/priorityqueue.js',
               'src/core/disposables/compositedisposable.js',
               'src/core/disposables/disposable.js',
               'src/core/disposables/booleandisposable.js',
+              'src/core/disposables/binarydisposable.js',
               'src/core/disposables/refcountdisposable.js',
               'src/core/disposables/scheduleddisposable.js',
               'src/core/concurrency/scheduleditem.js',
@@ -486,21 +498,21 @@ module.exports = function (grunt) {
               'src/core/linq/observable/catchproto.js',
               'src/core/linq/observable/catch.js',
               'src/core/linq/observable/combinelatestproto.js',
-              'src/core/linq/observable/combinelatest.js',
+              'src/core/perf/operators/combinelatest.js',
               'src/core/linq/observable/concatproto.js',
               'src/core/perf/operators/concat.js',
               'src/core/linq/observable/concatall.js',
-              'src/core/perf/operators/mergeproto.js',
+              'src/core/perf/operators/mergeconcat.js',
               'src/core/linq/observable/merge.js',
               'src/core/perf/operators/mergeall.js',
               'src/core/linq/observable/mergedelayerror.js',
               'src/core/linq/observable/onerrorresumenextproto.js',
               'src/core/linq/observable/onerrorresumenext.js',
-              'src/core/linq/observable/skipuntil.js',
+              'src/core/perf/operators/skipuntil.js',
               'src/core/perf/operators/switch.js',
               'src/core/perf/operators/takeuntil.js',
-              'src/core/linq/observable/withlatestfrom.js',
-              'src/core/linq/observable/zipproto.js',
+              'src/core/perf/operators/withlatestfrom.js',
+              'src/core/perf/operators/zip.js',
               'src/core/linq/observable/zip.js',
               'src/core/linq/observable/zipiterable.js',
 
@@ -537,7 +549,7 @@ module.exports = function (grunt) {
               'src/core/perf/operators/flatmaplatest.js',
               'src/core/perf/operators/skip.js',
               'src/core/linq/observable/skipwhile.js',
-              'src/core/linq/observable/take.js',
+              'src/core/perf/operators/take.js',
               'src/core/linq/observable/takewhile.js',
               'src/core/perf/operators/filter.js',
 
@@ -567,6 +579,8 @@ module.exports = function (grunt) {
               'src/core/linq/observable/findindex.js', // _findvalue, where
               'src/core/linq/observable/toset.js',
               'src/core/linq/observable/tomap.js',
+              'src/core/linq/observable/slice.js',
+              'src/core/linq/observable/lastindexof.js',
 
               // Async compat operators
               'src/core/linq/observable/spawn.js',
@@ -574,7 +588,7 @@ module.exports = function (grunt) {
               'src/core/linq/observable/toasync.js', // asyncsubject, asObservable
               'src/core/perf/operators/fromcallback.js',
               'src/core/perf/operators/fromnodecallback.js',
-              'src/core/linq/observable/fromevent.compat.js', // publish
+              'src/core/linq/observable/fromevent.js', // publish
               'src/core/linq/observable/fromeventpattern.js', // publish
               'src/core/linq/observable/startasync.js',
 
@@ -596,8 +610,6 @@ module.exports = function (grunt) {
               'src/core/linq/observable/replay.js', // multicast, ReplaySubject
               'src/core/linq/observable/sharereplay.js',
               'src/core/subjects/innersubscription.js',
-              'src/core/subjects/behaviorsubject.js',
-              'src/core/subjects/replaysubject.js',
               'src/core/linq/connectableobservable.js',
               'src/core/linq/observable/singleinstance.js',
 
@@ -633,9 +645,9 @@ module.exports = function (grunt) {
               'src/core/linq/observable/when.js', // CompositeDisposable
 
               // Time based operators
-              'src/core/linq/observable/_observabletimerdate.js', // AnonymousObservable
+              'src/core/linq/observable/_observabletimer.js', // AnonymousObservable
               'src/core/linq/observable/_observabletimerdateandperiod.js', // AnonymousObservable, normalizeTime
-              'src/core/linq/observable/_observabletimertimespan.js', // AnonymousObservable, normalizeTime
+
               'src/core/linq/observable/_observabletimertimespanandperiod.js', // AnonymousObservable, defer, _observabletimerdateandperiod
               'src/core/linq/observable/interval.js', // timeoutScheduler, _observabletimertimespanandperiod
               'src/core/linq/observable/timer.js', // timeoutScheduler, _observabletimerdate, _observabletimerdateandperiod, _observabletimertimespan, _observabletimertimespanandperiod
@@ -652,9 +664,6 @@ module.exports = function (grunt) {
               'src/core/linq/observable/generatewithabsolutetime.js', // timeoutScheduler, AnonymousObservable
               'src/core/linq/observable/generatewithrelativetime.js', // timeoutScheduler, AnonymousObservable
               'src/core/linq/observable/delaysubscription.js', // delayWithSelector, timer, empty
-              'src/core/linq/observable/delaywithselector.js',
-              'src/core/linq/observable/timeoutwithselector.js',
-              'src/core/linq/observable/debouncewithselector.js',
               'src/core/linq/observable/skiplastwithtime.js',
               'src/core/linq/observable/takelastwithtime.js',
               'src/core/linq/observable/takelastbufferwithtime.js',
@@ -662,7 +671,7 @@ module.exports = function (grunt) {
               'src/core/linq/observable/skipwithtime.js',
               'src/core/linq/observable/skipuntilwithtime.js',
               'src/core/linq/observable/takeuntilwithtime.js',
-              'src/core/linq/observable/throttlefirst.js',
+              'src/core/linq/observable/throttle.js',
 
               // Experimental Flattening
               'src/core/linq/observable/switchfirst.js',
@@ -676,6 +685,16 @@ module.exports = function (grunt) {
               'src/core/concurrency/virtualtimescheduler.js',
               'src/core/concurrency/historicalscheduler.js',
 
+              'src/core/testing/reactivetest.js',
+              'src/core/testing/recorded.js',
+              'src/core/testing/subscription.js',
+              'src/core/testing/mockdisposable.js',
+              'src/core/testing/mockobserver.js',
+              'src/core/testing/mockpromise.js',
+              'src/core/testing/hotobservable.js',
+              'src/core/testing/coldobservable.js',
+              'src/core/testing/testscheduler.js',
+
               'src/core/anonymousobservable.js',
               'src/core/autodetachobserver.js',
               'src/core/linq/groupedobservable.js',
@@ -683,6 +702,8 @@ module.exports = function (grunt) {
               'src/core/subjects/subject.js',
               'src/core/subjects/asyncsubject.js',
               'src/core/subjects/anonymoussubject.js',
+              'src/core/subjects/behaviorsubject.js',
+              'src/core/subjects/replaysubject.js',
               'src/core/backpressure/pauser.js',
               'src/core/headers/exports.js',
 
@@ -715,6 +736,7 @@ module.exports = function (grunt) {
               'src/core/disposables/compositedisposable.js',
               'src/core/disposables/disposable.js',
               'src/core/disposables/booleandisposable.js',
+              'src/core/disposables/binarydisposable.js',
               'src/core/disposables/refcountdisposable.js',
               'src/core/disposables/scheduleddisposable.js',
               'src/core/concurrency/scheduleditem.js',
@@ -727,6 +749,7 @@ module.exports = function (grunt) {
               'src/core/concurrency/currentthreadscheduler.js',
               'src/core/concurrency/defaultscheduler.js',
               'src/core/concurrency/catchscheduler.js',
+              'src/core/internal/priorityqueue.js',
               'src/core/notification.js',
               'src/core/observer.js',
               'src/core/abstractobserver.js',
@@ -770,21 +793,21 @@ module.exports = function (grunt) {
               'src/core/linq/observable/catchproto.js',
               'src/core/linq/observable/catch.js',
               'src/core/linq/observable/combinelatestproto.js',
-              'src/core/linq/observable/combinelatest.js',
+              'src/core/perf/operators/combinelatest.js',
               'src/core/linq/observable/concatproto.js',
               'src/core/perf/operators/concat.js',
               'src/core/linq/observable/concatall.js',
-              'src/core/perf/operators/mergeproto.js',
+              'src/core/perf/operators/mergeconcat.js',
               'src/core/linq/observable/merge.js',
               'src/core/linq/observable/mergedelayerror.js',
               'src/core/perf/operators/mergeall.js',
               'src/core/linq/observable/onerrorresumenextproto.js',
               'src/core/linq/observable/onerrorresumenext.js',
-              'src/core/linq/observable/skipuntil.js',
+              'src/core/perf/operators/skipuntil.js',
               'src/core/perf/operators/switch.js',
               'src/core/perf/operators/takeuntil.js',
-              'src/core/linq/observable/withlatestfrom.js',
-              'src/core/linq/observable/zipproto.js',
+              'src/core/perf/operators/withlatestfrom.js',
+              'src/core/perf/operators/zip.js',
               'src/core/linq/observable/zip.js',
               'src/core/linq/observable/zipiterable.js',
 
@@ -819,7 +842,7 @@ module.exports = function (grunt) {
               'src/core/perf/operators/flatmaplatest.js',
               'src/core/perf/operators/skip.js',
               'src/core/linq/observable/skipwhile.js',
-              'src/core/linq/observable/take.js',
+              'src/core/perf/operators/take.js',
               'src/core/linq/observable/takewhile.js',
               'src/core/perf/operators/filter.js',
 
@@ -852,6 +875,7 @@ module.exports = function (grunt) {
               'src/core/longstacktraces/longstackbegin.js',
               'src/core/longstacktraces/longstacktraces.js',
 
+              'src/core/internal/polyfills.js',
               'src/core/internal/errors.js',
 
               'src/core/headers/enumeratorheader.js',
@@ -860,10 +884,10 @@ module.exports = function (grunt) {
               'src/core/internal/dontenums.js',
               'src/core/internal/isequal.js',
               'src/core/internal/util.js',
-              'src/core/internal/polyfills.js',
               'src/core/disposables/compositedisposable.js',
               'src/core/disposables/disposable.js',
               'src/core/disposables/booleandisposable.js',
+              'src/core/disposables/binarydisposable.js',
               'src/core/disposables/refcountdisposable.js',
               'src/core/disposables/scheduleddisposable.js',
               'src/core/concurrency/scheduleditem.js',
@@ -876,6 +900,7 @@ module.exports = function (grunt) {
               'src/core/concurrency/currentthreadscheduler.js',
               'src/core/concurrency/defaultscheduler.js',
               'src/core/concurrency/catchscheduler.js',
+              'src/core/internal/priorityqueue.js',
               'src/core/notification.js',
               'src/core/observer.js',
               'src/core/abstractobserver.js',
@@ -918,21 +943,21 @@ module.exports = function (grunt) {
               'src/core/linq/observable/catchproto.js',
               'src/core/linq/observable/catch.js',
               'src/core/linq/observable/combinelatestproto.js',
-              'src/core/linq/observable/combinelatest.js',
+              'src/core/perf/operators/combinelatest.js',
               'src/core/linq/observable/concatproto.js',
               'src/core/perf/operators/concat.js',
               'src/core/linq/observable/concatall.js',
-              'src/core/perf/operators/mergeproto.js',
+              'src/core/perf/operators/mergeconcat.js',
               'src/core/linq/observable/merge.js',
               'src/core/perf/operators/mergeall.js',
               'src/core/linq/observable/mergedelayerror.js',
               'src/core/linq/observable/onerrorresumenextproto.js',
               'src/core/linq/observable/onerrorresumenext.js',
-              'src/core/linq/observable/skipuntil.js',
+              'src/core/perf/operators/skipuntil.js',
               'src/core/perf/operators/switch.js',
               'src/core/perf/operators/takeuntil.js',
-              'src/core/linq/observable/withlatestfrom.js',
-              'src/core/linq/observable/zipproto.js',
+              'src/core/perf/operators/withlatestfrom.js',
+              'src/core/perf/operators/zip.js',
               'src/core/linq/observable/zip.js',
               'src/core/linq/observable/zipiterable.js',
 
@@ -967,7 +992,7 @@ module.exports = function (grunt) {
               'src/core/perf/operators/flatmaplatest.js',
               'src/core/perf/operators/skip.js',
               'src/core/linq/observable/skipwhile.js',
-              'src/core/linq/observable/take.js',
+              'src/core/perf/operators/take.js',
               'src/core/linq/observable/takewhile.js',
               'src/core/perf/operators/filter.js',
 
@@ -1010,6 +1035,7 @@ module.exports = function (grunt) {
               'src/core/disposables/compositedisposable.js',
               'src/core/disposables/disposable.js',
               'src/core/disposables/booleandisposable.js',
+              'src/core/disposables/binarydisposable.js',
               'src/core/disposables/refcountdisposable.js',
 
               'src/core/concurrency/scheduleditem.js',
@@ -1020,6 +1046,7 @@ module.exports = function (grunt) {
               'src/core/concurrency/currentthreadscheduler.js',
               'src/core/concurrency/scheduleperiodicrecursive.js',
               'src/core/concurrency/defaultscheduler.js',
+              'src/core/internal/priorityqueue.js',
 
               'src/core/notification.js',
               'src/core/observer-lite.js',
@@ -1050,19 +1077,19 @@ module.exports = function (grunt) {
               'src/core/linq/observable/catchproto.js',
               'src/core/linq/observable/catch.js',
               'src/core/linq/observable/combinelatestproto.js',
-              'src/core/linq/observable/combinelatest.js',
+              'src/core/perf/operators/combinelatest.js',
               'src/core/linq/observable/concatproto.js',
               'src/core/perf/operators/concat.js',
               'src/core/linq/observable/concatall.js',
-              'src/core/perf/operators/mergeproto.js',
+              'src/core/perf/operators/mergeconcat.js',
               'src/core/linq/observable/merge.js',
               'src/core/linq/observable/mergedelayerror.js',
               'src/core/perf/operators/mergeall.js',
-              'src/core/linq/observable/skipuntil.js',
+              'src/core/perf/operators/skipuntil.js',
               'src/core/perf/operators/switch.js',
               'src/core/perf/operators/takeuntil.js',
-              'src/core/linq/observable/withlatestfrom.js',
-              'src/core/linq/observable/zipproto.js',
+              'src/core/perf/operators/withlatestfrom.js',
+              'src/core/perf/operators/zip.js',
               'src/core/linq/observable/zip.js',
               'src/core/linq/observable/zipiterable.js',
 
@@ -1090,7 +1117,7 @@ module.exports = function (grunt) {
               'src/core/perf/operators/flatmaplatest.js',
               'src/core/perf/operators/skip.js',
               'src/core/linq/observable/skipwhile.js',
-              'src/core/linq/observable/take.js',
+              'src/core/perf/operators/take.js',
               'src/core/linq/observable/takewhile.js',
               'src/core/perf/operators/filter.js',
 
@@ -1115,9 +1142,9 @@ module.exports = function (grunt) {
               'src/core/linq/connectableobservable.js',
 
               // Time operators
-              'src/core/linq/observable/_observabletimerdate.js', // AnonymousObservable
+              'src/core/linq/observable/_observabletimer.js', // AnonymousObservable
               'src/core/linq/observable/_observabletimerdateandperiod.js', // AnonymousObservable, normalizeTime
-              'src/core/linq/observable/_observabletimertimespan.js', // AnonymousObservable, normalizeTime
+
               'src/core/linq/observable/_observabletimertimespanandperiod.js', // AnonymousObservable, defer, _observabletimerdateandperiod
               'src/core/linq/observable/interval.js', // timeoutScheduler, _observabletimertimespanandperiod
               'src/core/linq/observable/timer.js', // timeoutScheduler, _observabletimerdate, _observabletimerdateandperiod, _observabletimertimespan, _observabletimertimespanandperiod
@@ -1126,7 +1153,7 @@ module.exports = function (grunt) {
               'src/core/linq/observable/timestamp.js', // timeoutScheduler, select
               'src/core/linq/observable/sample.js', // AnonymousObservable, CompositeDisposable, interval, timeoutScheduler
               'src/core/linq/observable/timeout.js', // AnonymousObservable, timeoutScheduler, throw, SingleAssignmentDisposable, SerialDisposable, CompositeDisposable
-              'src/core/linq/observable/throttlefirst.js',
+              'src/core/linq/observable/throttle.js',
 
               // Backpressure operators
               'src/core/backpressure/pausable.js',
@@ -1167,6 +1194,7 @@ module.exports = function (grunt) {
               'src/core/longstacktraces/longstackbegin.js',
               'src/core/longstacktraces/longstacktraces.js',
 
+              'src/core/internal/polyfills.js',
               'src/core/internal/errors.js',
 
               'src/core/headers/enumeratorheader.js',
@@ -1175,10 +1203,10 @@ module.exports = function (grunt) {
               'src/core/internal/dontenums.js',
               'src/core/internal/isequal.js',
               'src/core/internal/util.js',
-              'src/core/internal/polyfills.js',
               'src/core/disposables/compositedisposable.js',
               'src/core/disposables/disposable.js',
               'src/core/disposables/booleandisposable.js',
+              'src/core/disposables/binarydisposable.js',
               'src/core/disposables/refcountdisposable.js',
 
               'src/core/concurrency/scheduleditem.js',
@@ -1189,6 +1217,7 @@ module.exports = function (grunt) {
               'src/core/concurrency/currentthreadscheduler.js',
               'src/core/concurrency/scheduleperiodicrecursive.js',
               'src/core/concurrency/defaultscheduler.js',
+              'src/core/internal/priorityqueue.js',
 
               'src/core/notification.js',
               'src/core/observer-lite.js',
@@ -1219,19 +1248,19 @@ module.exports = function (grunt) {
               'src/core/linq/observable/catchproto.js',
               'src/core/linq/observable/catch.js',
               'src/core/linq/observable/combinelatestproto.js',
-              'src/core/linq/observable/combinelatest.js',
+              'src/core/perf/operators/combinelatest.js',
               'src/core/linq/observable/concatproto.js',
               'src/core/perf/operators/concat.js',
               'src/core/linq/observable/concatall.js',
-              'src/core/perf/operators/mergeproto.js',
+              'src/core/perf/operators/mergeconcat.js',
               'src/core/linq/observable/merge.js',
               'src/core/perf/operators/mergeall.js',
               'src/core/linq/observable/mergedelayerror.js',
-              'src/core/linq/observable/skipuntil.js',
+              'src/core/perf/operators/skipuntil.js',
               'src/core/perf/operators/switch.js',
               'src/core/perf/operators/takeuntil.js',
-              'src/core/linq/observable/withlatestfrom.js',
-              'src/core/linq/observable/zipproto.js',
+              'src/core/perf/operators/withlatestfrom.js',
+              'src/core/perf/operators/zip.js',
               'src/core/linq/observable/zip.js',
               'src/core/linq/observable/zipiterable.js',
 
@@ -1259,14 +1288,14 @@ module.exports = function (grunt) {
               'src/core/perf/operators/flatmaplatest.js',
               'src/core/perf/operators/skip.js',
               'src/core/linq/observable/skipwhile.js',
-              'src/core/linq/observable/take.js',
+              'src/core/perf/operators/take.js',
               'src/core/linq/observable/takewhile.js',
               'src/core/perf/operators/filter.js',
 
               // Async Operators
               'src/core/perf/operators/fromcallback.js',
               'src/core/perf/operators/fromnodecallback.js',
-              'src/core/linq/observable/fromevent.compat.js', // publish
+              'src/core/linq/observable/fromevent.js', // publish
               'src/core/linq/observable/fromeventpattern.js', // publish
               'src/core/perf/operators/frompromise.js', // AsyncSubject, asObservable
               'src/core/linq/observable/topromise.js',
@@ -1284,9 +1313,9 @@ module.exports = function (grunt) {
               'src/core/linq/connectableobservable.js',
 
               // Time operators
-              'src/core/linq/observable/_observabletimerdate.js', // AnonymousObservable
+              'src/core/linq/observable/_observabletimer.js', // AnonymousObservable
               'src/core/linq/observable/_observabletimerdateandperiod.js', // AnonymousObservable, normalizeTime
-              'src/core/linq/observable/_observabletimertimespan.js', // AnonymousObservable, normalizeTime
+
               'src/core/linq/observable/_observabletimertimespanandperiod.js', // AnonymousObservable, defer, _observabletimerdateandperiod
               'src/core/linq/observable/interval.js', // timeoutScheduler, _observabletimertimespanandperiod
               'src/core/linq/observable/timer.js', // timeoutScheduler, _observabletimerdate, _observabletimerdateandperiod, _observabletimertimespan, _observabletimertimespanandperiod
@@ -1295,7 +1324,7 @@ module.exports = function (grunt) {
               'src/core/linq/observable/timestamp.js', // timeoutScheduler, select
               'src/core/linq/observable/sample.js', // AnonymousObservable, CompositeDisposable, interval, timeoutScheduler
               'src/core/linq/observable/timeout.js', // AnonymousObservable, timeoutScheduler, throw, SingleAssignmentDisposable, SerialDisposable, CompositeDisposable
-              'src/core/linq/observable/throttlefirst.js',
+              'src/core/linq/observable/throttle.js',
 
               // Backpressure operators
               'src/core/backpressure/pausable.js',
@@ -1490,6 +1519,8 @@ module.exports = function (grunt) {
               'src/core/linq/observable/findindex.js', // _findvalue, where
               'src/core/linq/observable/toset.js',
               'src/core/linq/observable/tomap.js',
+              'src/core/linq/observable/slice.js',
+              'src/core/linq/observable/lastindexof.js',
               'src/core/headers/suboutro.js'
             ],
             dest: 'dist/rx.aggregates.js'
@@ -1525,6 +1556,8 @@ module.exports = function (grunt) {
               'src/core/linq/observable/findindex.js', // _findvalue, where
               'src/core/linq/observable/toset.js',
               'src/core/linq/observable/tomap.js',
+              'src/core/linq/observable/slice.js',
+              'src/core/linq/observable/lastindexof.js',
               'src/core/headers/suboutro.js'
             ],
             dest: 'modules/rx-lite-aggregates/rx.lite.aggregates.js'
@@ -1560,6 +1593,8 @@ module.exports = function (grunt) {
               'src/core/linq/observable/findindex.js', // _findvalue, where
               'src/core/linq/observable/toset.js',
               'src/core/linq/observable/tomap.js',
+              'src/core/linq/observable/slice.js',
+              'src/core/linq/observable/lastindexof.js',
               'src/core/headers/suboutro.js'
             ],
             dest: 'modules/rx-lite-aggregates-compat/rx.lite.aggregates.compat.js'
@@ -1593,7 +1628,7 @@ module.exports = function (grunt) {
               'src/core/linq/observable/toasync.js', // asyncsubject, asObservable
               'src/core/perf/operators/fromcallback.js',
               'src/core/perf/operators/fromnodecallback.js',
-              'src/core/linq/observable/fromevent.compat.js', // publish
+              'src/core/linq/observable/fromevent.js', // publish
               'src/core/linq/observable/fromeventpattern.js', // publish
               'src/core/linq/observable/startasync.js',
               'src/core/headers/suboutro.js'
@@ -1795,6 +1830,7 @@ module.exports = function (grunt) {
               'src/core/headers/license.js',
               'src/core/headers/subintro.js',
               'src/core/headers/joinpatternsheader.js',
+              'src/core/internal/trycatch.js',
               'src/core/internal/map.js',
               'src/core/joins/pattern.js',
               'src/core/joins/plan.js',
@@ -1812,6 +1848,7 @@ module.exports = function (grunt) {
               'src/core/headers/license.js',
               'src/core/headers/liteintro.js',
               'src/core/headers/joinpatternsheader.js',
+              'src/core/internal/trycatch.js',
               'src/core/internal/map.js',
               'src/core/joins/pattern.js',
               'src/core/joins/plan.js',
@@ -1829,6 +1866,7 @@ module.exports = function (grunt) {
               'src/core/headers/license.js',
               'src/core/headers/liteintro-compat.js',
               'src/core/headers/joinpatternsheader.js',
+              'src/core/internal/trycatch.js',
               'src/core/internal/map.js',
               'src/core/joins/pattern.js',
               'src/core/joins/plan.js',
@@ -1901,9 +1939,9 @@ module.exports = function (grunt) {
               'src/core/headers/subintro.js',
               'src/core/headers/timeheader.js',
               'src/core/internal/trycatch.js',
-              'src/core/linq/observable/_observabletimerdate.js', // AnonymousObservable
+              'src/core/linq/observable/_observabletimer.js', // AnonymousObservable
               'src/core/linq/observable/_observabletimerdateandperiod.js', // AnonymousObservable, normalizeTime
-              'src/core/linq/observable/_observabletimertimespan.js', // AnonymousObservable, normalizeTime
+
               'src/core/linq/observable/_observabletimertimespanandperiod.js', // AnonymousObservable, defer, _observabletimerdateandperiod
               'src/core/linq/observable/interval.js', // timeoutScheduler, _observabletimertimespanandperiod
               'src/core/linq/observable/timer.js', // timeoutScheduler, _observabletimerdate, _observabletimerdateandperiod, _observabletimertimespan, _observabletimertimespanandperiod
@@ -1920,9 +1958,6 @@ module.exports = function (grunt) {
               'src/core/linq/observable/generatewithabsolutetime.js', // timeoutScheduler, AnonymousObservable
               'src/core/linq/observable/generatewithrelativetime.js', // timeoutScheduler, AnonymousObservable
               'src/core/linq/observable/delaysubscription.js', // delayWithSelector, timer, empty
-              'src/core/linq/observable/delaywithselector.js',
-              'src/core/linq/observable/timeoutwithselector.js',
-              'src/core/linq/observable/debouncewithselector.js',
               'src/core/linq/observable/skiplastwithtime.js',
               'src/core/linq/observable/takelastwithtime.js',
               'src/core/linq/observable/takelastbufferwithtime.js',
@@ -1930,7 +1965,7 @@ module.exports = function (grunt) {
               'src/core/linq/observable/skipwithtime.js',
               'src/core/linq/observable/skipuntilwithtime.js',
               'src/core/linq/observable/takeuntilwithtime.js',
-              'src/core/linq/observable/throttlefirst.js',
+              'src/core/linq/observable/throttle.js',
               'src/core/headers/suboutro.js'
             ],
             dest: 'dist/rx.time.js'
@@ -1949,9 +1984,6 @@ module.exports = function (grunt) {
               'src/core/linq/observable/generatewithabsolutetime.js', // timeoutScheduler, AnonymousObservable
               'src/core/linq/observable/generatewithrelativetime.js', // timeoutScheduler, AnonymousObservable
               'src/core/linq/observable/delaysubscription.js', // delayWithSelector, timer, empty
-              'src/core/linq/observable/delaywithselector.js',
-              'src/core/linq/observable/timeoutwithselector.js',
-              'src/core/linq/observable/debouncewithselector.js',
               'src/core/linq/observable/skiplastwithtime.js',
               'src/core/linq/observable/takelastwithtime.js',
               'src/core/linq/observable/takelastbufferwithtime.js',
@@ -1977,9 +2009,6 @@ module.exports = function (grunt) {
               'src/core/linq/observable/generatewithabsolutetime.js', // timeoutScheduler, AnonymousObservable
               'src/core/linq/observable/generatewithrelativetime.js', // timeoutScheduler, AnonymousObservable
               'src/core/linq/observable/delaysubscription.js', // delayWithSelector, timer, empty
-              'src/core/linq/observable/delaywithselector.js',
-              'src/core/linq/observable/timeoutwithselector.js',
-              'src/core/linq/observable/debouncewithselector.js',
               'src/core/linq/observable/skiplastwithtime.js',
               'src/core/linq/observable/takelastwithtime.js',
               'src/core/linq/observable/takelastbufferwithtime.js',
@@ -1996,7 +2025,6 @@ module.exports = function (grunt) {
               'src/core/headers/license.js',
               'src/core/headers/subintro.js',
               'src/core/headers/virtualtimeheader.js',
-              'src/core/internal/priorityqueue.js',
               'src/core/concurrency/virtualtimescheduler.js',
               'src/core/concurrency/historicalscheduler.js',
               'src/core/headers/suboutro.js'
@@ -2008,7 +2036,6 @@ module.exports = function (grunt) {
               'src/core/headers/license.js',
               'src/core/headers/liteintro.js',
               'src/core/headers/virtualtimeheader.js',
-              'src/core/internal/priorityqueue.js',
               'src/core/concurrency/virtualtimescheduler.js',
               'src/core/concurrency/historicalscheduler.js',
               'src/core/headers/suboutro.js'
@@ -2019,7 +2046,6 @@ module.exports = function (grunt) {
             src: [
               'src/core/headers/license.js',
               'src/core/headers/liteintro-compat.js',
-              'src/core/internal/priorityqueue.js',
               'src/core/headers/virtualtimeheader.js',
               'src/core/concurrency/virtualtimescheduler.js',
               'src/core/concurrency/historicalscheduler.js',
@@ -2560,7 +2586,7 @@ module.exports = function (grunt) {
       var source = grunt.file.read(tsFile);
 
       // source with tests
-      var s = source.match(/module Rx \{([\s\S]*)\}[\s\S]*\(function/);
+      var s = source.match(/module Rx \{([\s\S]*)\}[\s\S]*\(function\s*\(\)\s*\{[\s\S]*\}\)/);
       if (s && s[1]) {
         c = cache[tsFile] = s[1];
 	  }
@@ -2579,6 +2605,10 @@ module.exports = function (grunt) {
 		  .substr(__dirname.length + 1)
 		  .replace(/\\/g, '/');
 
+        if (tsFile.indexOf('/testscheduler.ts') > -1 && dep.indexOf('virtualtimescheduler.ts') > -1) {
+            continue;
+        }
+
 		deps.push(dep);
 		loadFile(dep);
 	  }
@@ -2592,7 +2622,9 @@ module.exports = function (grunt) {
       }
 
 	  if (!(concatKey === 'all' || concatKey === 'main' || concatKey === 'lite' || concatKey === 'core')) {
-		if (allLoadedFiles['lite'][tsFile] || allLoadedFiles['core'][tsFile]) {
+		if ((concatKey.indexOf('lite') === 0 && allLoadedFiles['lite'][tsFile])
+		    || (concatKey.indexOf('lite') !== 0 && allLoadedFiles['main'][tsFile])
+		    || allLoadedFiles['core'][tsFile]) {
 		  loadedFiles[tsFile] = true;
 		  return;
 		}
@@ -2628,7 +2660,7 @@ module.exports = function (grunt) {
 	    continue;
 	  }
 
-	  if (key === 'lite' || key === 'core') {
+	  if (key === 'lite' || key === 'main' || key === 'core') {
 		items.unshift(key);
 	  } else {
 		items.push(key);
@@ -2690,51 +2722,11 @@ module.exports = function (grunt) {
 		if (concatKey === 'all' || concatKey === 'main' || concatKey === 'lite' || concatKey === 'core') {
 		  outputString += '\ndeclare module "rx" { export = Rx; }\n';
 		}
-		if (dist && concatKey !== 'core') {
+		if (dist && concatKey !== 'core' && concatKey !== 'main') {
 		  outputString += 'declare module "'+dist+'" { export = Rx; }';
 		}
 
-		// TS 1.5.4 support
-		  outputString = outputString
-			.replace(/export type ObservableOrPromise<T> = IObservable<T> \| Observable<T> \| Promise<T>;/g, '')
-			.replace(/export type ArrayLike<T> = Array<T> \| \{ length: number;\[index: number\]: T; \};/g, '')
-			.replace(/export type ArrayOrIterable<T> = ArrayLike<T> \| Iterable<T>;/g, '')
-			.replace(/export type ArrayOrIterable<T> = ArrayLike<T>;/g, '')
-			.replace(/export type _Selector<T, TResult> = \(value: T, index: number, observable: Observable<T>\) => TResult;/g, '')
-			.replace(/export type _ValueOrSelector<T, TResult> = TResult \| _Selector<T, TResult>;/g, '')
-			.replace(/export type _Predicate<T> = _Selector<T, boolean>;/g, '')
-			.replace(/export type _Comparer<T, TResult> = \(value1: T, value2: T\) => TResult;/g, '')
-			.replace(/export type _Accumulator<T, TAcc> = \(acc: TAcc, value: T\) => TAcc;/g, '')
-			.replace(/export type _FlatMapResultSelector<T1, T2, TResult> = \(value: T1, selectorValue: T2, index: number, selectorOther: number\) => TResult;/g, '')
-			.replace(/_Predicate<(\w*?)>/g, '_Selector<$1, boolean>')
-			.replace(/_ValueOrSelector<(\w*?), ObservableOrPromise<(\w*?)>>/g, 'ObservableOrPromise<$2> | _Selector<$1, ObservableOrPromise<$2>>')
-			.replace(/_ValueOrSelector<(\w*?), ArrayOrIterable<(\w*?)>>/g, 'ArrayOrIterable<$2> | _Selector<$1, ArrayOrIterable<$2>>')
-			.replace(/_ValueOrSelector<(\w*?), (\w*?)>/g, '$2 | _Selector<$1, $2>')
-			.replace(/_Selector<Observable<(\w*?)>, (\w*?)>/g, '((value: Observable<$1>, index: number, observable: Observable<Observable<$1>>) => $2)')
-			.replace(/_Selector<(\w*?), Observable<(\w*?)>>/g, '((value: $1, index: number, observable: Observable<$1>) => Observable<$2>)')
-			.replace(/_Selector<(\w*?), ObservableOrPromise<(\w*?)>>/g, '((value: $1, index: number, observable: ObservableOrPromise<$1>) => ObservableOrPromise<$2>)')
-			.replace(/_Selector<(\w*?), ArrayOrIterable<(\w*?)>>/g, '((value: $1, index: number, observable: ArrayOrIterable<$1>) => ArrayOrIterable<$2>)')
-			.replace(/_Selector<(\w*?), (\w*?)>/g, '((value: $1, index: number, observable: Observable<$1>) => $2)')
-			.replace(/_Comparer<(\w*?), (\w*?)>/g, '((value1: $1, value2: $1) => $2)')
-			.replace(/_Comparer<T \| TOther, boolean>/, '((value1: T | TOther, value2: T | TOther) => boolean)')
-			.replace(/_Accumulator<(\w*?), (\w*?)>/g, '((acc: $1, value: $1) => $2)')
-			.replace(/special._FlatMapResultSelector<(\w*?), (\w*?), (\w*?)>/g, '((value: $1, selectorValue: $2, index: number, selectorOther: number) => $3)')
-			.replace(/ObservableOrPromise\<(\w*?)\>/g, '(IObservable<$1> | Observable<$1> \| Promise<$1>)')
-
-			/*special._FlatMapResultSelector<T, TOther, TResult>*/
-		if (es6) {
-		  outputString = outputString
-			  .replace(/ArrayOrIterable<(\w*?)>/g, '(ArrayLike<$1> | Iterable<$1>)');
-		} else {
-		  outputString = outputString
-			  .replace(/ArrayOrIterable<(\w*?)>/g, 'ArrayLike<$1>');
-		}
-
-		outputString = outputString
-			.replace(/ArrayLike<(\w*?)>/g, '(Array<$1> | { length: number;[index: number]: $1; })')
-
 		outputString = outputString + '\n';
-			//.replace(/\(IObservable<TResult> \| Observable<TResult> \| Promise<TResult>\) \| \(value: T, index: number, observable: \(IObservable<T> \| Observable<T> \| Promise<T>\)\) => \(IObservable<TResult> \| Observable<TResult> \| Promise<TResult>\)\): Observable<TResult>/, '(IObservable<TResult> | Observable<TResult> | Promise<TResult> | (value: T, index: number, observable: (IObservable<T> | Observable<T> | Promise<T>)) => (IObservable<TResult> | Observable<TResult> | Promise<TResult>)): Observable<TResult>')
 
 		grunt.file.write(dest, outputString);
 	  };

@@ -1,74 +1,73 @@
-﻿QUnit.module('VirtualTimeScheduler');
+(function () {
 
-var VirtualTimeScheduler = Rx.VirtualTimeScheduler;
+  /* jshint undef: true, unused: true */
+  /* globals QUnit, test, Rx, equal, ok */
 
-var VirtualSchedulerTestScheduler = (function () {
+  QUnit.module('VirtualTimeScheduler');
+
+  var VirtualTimeScheduler = Rx.VirtualTimeScheduler;
+
+  var VirtualSchedulerTestScheduler = (function () {
 
     function comparer(a, b) {
-        if (a > b) {
-            return 1;
-        }
-        if (a < b) {
-            return -1;
-        }
-        return 0;
+      return a > b ? 1 : a < b ? -1 : 0;
     }
 
     function add(absolute, relative) {
-        if (absolute === null) {
-            absolute = '';
-        }
-        return absolute + relative;
+      absolute == null && (absolute = '');
+      return absolute + relative;
     }
 
-    function toDateTimeOffset(absolute) {
-        if (absolute === null) {
-            absolute = '';
-        }
-        return new Date(absolute.length);
+    function toAbsoluteTime(absolute) {
+      absolute == null && (absolute = '');
+      return new Date(absolute.length);
     }
 
-    function toRelative(timespan) {
-        return String.fromCharCode(timeSpan % 65535);
+    function toRelative (timeSpan) {
+      return String.fromCharCode(timeSpan % 65535);
     }
 
     return function () {
-        var scheduler = new VirtualTimeScheduler(null, comparer);
-        scheduler.add = add.bind(scheduler);
-        scheduler.toDateTimeOffset = toDateTimeOffset.bind(scheduler);
-        scheduler.toRelative = toRelative.bind(scheduler);
-        return scheduler;
+      var scheduler = new VirtualTimeScheduler(null, comparer);
+      scheduler.add = add;
+      scheduler.toAbsoluteTime = toAbsoluteTime;
+      scheduler.toRelative = toRelative;
+      return scheduler;
     };
-}());
+  }());
 
-test('Virtual_Now', function () {
-    var res;
-    res = new VirtualSchedulerTestScheduler().now() - new Date().getTime();
+  test('Virtual Now', function () {
+    var res = new VirtualSchedulerTestScheduler().now() - new Date().getTime();
     ok(res < 1000);
-});
+  });
 
-test('Virtual_ScheduleAction', function () {
-    var ran, scheduler;
-    ran = false;
-    scheduler = new VirtualSchedulerTestScheduler();
-    scheduler.schedule(function () {
-        ran = true;
-    });
+  test('Virtual Schedule Action', function () {
+    var ran = false;
+
+    var scheduler = new VirtualSchedulerTestScheduler();
+
+    scheduler.schedule(null, function () { ran = true; });
+
     scheduler.start();
-    ok(ran);
-});
 
-test('Virtual_ScheduleActionError', function () {
-    var ex, scheduler;
-    ex = 'ex';
+    ok(ran);
+  });
+
+  test('Virtual Schedule Action Error', function () {
+    var error = new Error();
+
     try {
-        scheduler = new VirtualSchedulerTestScheduler();
-        scheduler.schedule(function () {
-            throw ex;
-        });
-        scheduler.start();
-        ok(false);
+      var scheduler = new VirtualSchedulerTestScheduler();
+
+      scheduler.schedule(error, function (_, e) {
+        throw e;
+      });
+
+      scheduler.start();
+      ok(false);
     } catch (e) {
-        equal(e, ex);
+      equal(e, error);
     }
-});
+  });
+
+}());

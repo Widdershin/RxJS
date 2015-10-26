@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
+// Copyright (c) Microsoft, All rights reserved. See License.txt in the project root for license information.
 
 ;(function (factory) {
   var objectTypes = {
@@ -6,15 +6,18 @@
     'object': true
   };
 
-  var
-    freeExports = objectTypes[typeof exports] && exports && !exports.nodeType && exports,
-    freeSelf = objectTypes[typeof self] && self.Object && self,
-    freeWindow = objectTypes[typeof window] && window && window.Object && window,
-    freeModule = objectTypes[typeof module] && module && !module.nodeType && module,
-    moduleExports = freeModule && freeModule.exports === freeExports && freeExports,
-    freeGlobal = freeExports && freeModule && typeof global == 'object' && global && global.Object && global;
+  function checkGlobal(value) {
+    return (value && value.Object === Object) ? value : null;
+  }
 
-  var root = root = freeGlobal || ((freeWindow !== (this && this.window)) && freeWindow) || freeSelf || this;
+  var freeExports = (objectTypes[typeof exports] && exports && !exports.nodeType) ? exports : null;
+  var freeModule = (objectTypes[typeof module] && module && !module.nodeType) ? module : null;
+  var freeGlobal = checkGlobal(freeExports && freeModule && typeof global === 'object' && global);
+  var freeSelf = checkGlobal(objectTypes[typeof self] && self);
+  var freeWindow = checkGlobal(objectTypes[typeof window] && window);
+  var moduleExports = (freeModule && freeModule.exports === freeExports) ? freeExports : null;
+  var thisGlobal = checkGlobal(objectTypes[typeof this] && this);
+  var root = freeGlobal || ((freeWindow !== (thisGlobal && thisGlobal.window)) && freeWindow) || freeSelf || thisGlobal || Function('return this')();
 
     // Because of build optimizers
     if (typeof define === 'function' && define.amd) {
@@ -39,6 +42,7 @@
     Scheduler = Rx.Scheduler,
     ScheduledItem = Rx.internals.ScheduledItem,
     SchedulePeriodicRecursive  = Rx.internals.SchedulePeriodicRecursive,
+    PriorityQueue = Rx.internals.PriorityQueue,
     inherits = Rx.internals.inherits,
     notImplemented = Rx.helpers.notImplemented,
     defaultComparer = Rx.helpers.defaultComparer = function (a, b) { return isEqual(a, b); };
@@ -47,27 +51,28 @@
    *  Represents a notification to an observer.
    */
   var Notification = Rx.Notification = (function () {
-    function Notification(kind, value, exception, accept, acceptObservable, toString) {
-      this.kind = kind;
-      this.value = value;
-      this.exception = exception;
-      this._accept = accept;
-      this._acceptObservable = acceptObservable;
-      this.toString = toString;
+    function Notification() {
+
     }
+
+    Notification.prototype._accept = function (onNext, onError, onCompleted) {
+      throw new NotImplementedError();
+    };
+
+    Notification.prototype._acceptObserver = function (onNext, onError, onCompleted) {
+      throw new NotImplementedError();
+    };
 
     /**
      * Invokes the delegate corresponding to the notification or the observer's method corresponding to the notification and returns the produced result.
-     *
-     * @memberOf Notification
-     * @param {Any} observerOrOnNext Delegate to invoke for an OnNext notification or Observer to invoke the notification on..
-     * @param {Function} onError Delegate to invoke for an OnError notification.
-     * @param {Function} onCompleted Delegate to invoke for an OnCompleted notification.
+     * @param {Function | Observer} observerOrOnNext Function to invoke for an OnNext notification or Observer to invoke the notification on..
+     * @param {Function} onError Function to invoke for an OnError notification.
+     * @param {Function} onCompleted Function to invoke for an OnCompleted notification.
      * @returns {Any} Result produced by the observation.
      */
     Notification.prototype.accept = function (observerOrOnNext, onError, onCompleted) {
       return observerOrOnNext && typeof observerOrOnNext === 'object' ?
-        this._acceptObservable(observerOrOnNext) :
+        this._acceptObserver(observerOrOnNext) :
         this._accept(observerOrOnNext, onError, onCompleted);
     };
 
@@ -81,10 +86,10 @@
     Notification.prototype.toObservable = function (scheduler) {
       var self = this;
       isScheduler(scheduler) || (scheduler = immediateScheduler);
-      return new AnonymousObservable(function (observer) {
-        return scheduler.scheduleWithState(self, function (_, notification) {
-          notification._acceptObservable(observer);
-          notification.kind === 'N' && observer.onCompleted();
+      return new AnonymousObservable(function (o) {
+        return scheduler.schedule(self, function (_, notification) {
+          notification._acceptObserver(o);
+          notification.kind === 'N' && o.onCompleted();
         });
       });
     };
@@ -92,49 +97,96 @@
     return Notification;
   })();
 
+  var OnNextNotification = (function (__super__) {
+    inherits(OnNextNotification, __super__);
+    function OnNextNotification(value) {
+      this.value = value;
+      this.kind = 'N';
+    }
+
+    OnNextNotification.prototype._accept = function (onNext) {
+      return onNext(this.value);
+    };
+
+    OnNextNotification.prototype._acceptObserver = function (o) {
+      return o.onNext(this.value);
+    };
+
+    OnNextNotification.prototype.toString = function () {
+      return 'OnNext(' + this.value + ')';
+    };
+
+    return OnNextNotification;
+  }(Notification));
+
+  var OnErrorNotification = (function (__super__) {
+    inherits(OnErrorNotification, __super__);
+    function OnErrorNotification(error) {
+      this.error = error;
+      this.kind = 'E';
+    }
+
+    OnErrorNotification.prototype._accept = function (onNext, onError) {
+      return onError(this.error);
+    };
+
+    OnErrorNotification.prototype._acceptObserver = function (o) {
+      return o.onError(this.error);
+    };
+
+    OnErrorNotification.prototype.toString = function () {
+      return 'OnError(' + this.error + ')';
+    };
+
+    return OnErrorNotification;
+  }(Notification));
+
+  var OnCompletedNotification = (function (__super__) {
+    inherits(OnCompletedNotification, __super__);
+    function OnCompletedNotification() {
+      this.kind = 'C';
+    }
+
+    OnCompletedNotification.prototype._accept = function (onNext, onError, onCompleted) {
+      return onCompleted();
+    };
+
+    OnCompletedNotification.prototype._acceptObserver = function (o) {
+      return o.onCompleted();
+    };
+
+    OnCompletedNotification.prototype.toString = function () {
+      return 'OnCompleted()';
+    };
+
+    return OnCompletedNotification;
+  }(Notification));
+
   /**
    * Creates an object that represents an OnNext notification to an observer.
    * @param {Any} value The value contained in the notification.
    * @returns {Notification} The OnNext notification containing the value.
    */
-  var notificationCreateOnNext = Notification.createOnNext = (function () {
-      function _accept(onNext) { return onNext(this.value); }
-      function _acceptObservable(observer) { return observer.onNext(this.value); }
-      function toString() { return 'OnNext(' + this.value + ')'; }
-
-      return function (value) {
-        return new Notification('N', value, null, _accept, _acceptObservable, toString);
-      };
-  }());
+  var notificationCreateOnNext = Notification.createOnNext = function (value) {
+    return new OnNextNotification(value);
+  };
 
   /**
    * Creates an object that represents an OnError notification to an observer.
    * @param {Any} error The exception contained in the notification.
    * @returns {Notification} The OnError notification containing the exception.
    */
-  var notificationCreateOnError = Notification.createOnError = (function () {
-    function _accept (onNext, onError) { return onError(this.exception); }
-    function _acceptObservable(observer) { return observer.onError(this.exception); }
-    function toString () { return 'OnError(' + this.exception + ')'; }
-
-    return function (e) {
-      return new Notification('E', null, e, _accept, _acceptObservable, toString);
-    };
-  }());
+  var notificationCreateOnError = Notification.createOnError = function (error) {
+    return new OnErrorNotification(error);
+  };
 
   /**
    * Creates an object that represents an OnCompleted notification to an observer.
    * @returns {Notification} The OnCompleted notification.
    */
-  var notificationCreateOnCompleted = Notification.createOnCompleted = (function () {
-    function _accept (onNext, onError, onCompleted) { return onCompleted(); }
-    function _acceptObservable(observer) { return observer.onCompleted(); }
-    function toString () { return 'OnCompleted()'; }
-
-    return function () {
-      return new Notification('C', null, null, _accept, _acceptObservable, toString);
-    };
-  }());
+  var notificationCreateOnCompleted = Notification.createOnCompleted = function () {
+    return new OnCompletedNotification();
+  };
 
   /** Used to determine if values are of the language type Object */
   var dontEnums = ['toString',
@@ -146,290 +198,317 @@
     'constructor'],
   dontEnumsLength = dontEnums.length;
 
-  /** `Object#toString` result shortcuts */
-  var argsClass = '[object Arguments]',
-    arrayClass = '[object Array]',
-    boolClass = '[object Boolean]',
-    dateClass = '[object Date]',
-    errorClass = '[object Error]',
-    funcClass = '[object Function]',
-    numberClass = '[object Number]',
-    objectClass = '[object Object]',
-    regexpClass = '[object RegExp]',
-    stringClass = '[object String]';
+var argsTag = '[object Arguments]',
+    arrayTag = '[object Array]',
+    boolTag = '[object Boolean]',
+    dateTag = '[object Date]',
+    errorTag = '[object Error]',
+    funcTag = '[object Function]',
+    mapTag = '[object Map]',
+    numberTag = '[object Number]',
+    objectTag = '[object Object]',
+    regexpTag = '[object RegExp]',
+    setTag = '[object Set]',
+    stringTag = '[object String]',
+    weakMapTag = '[object WeakMap]';
 
-  var toString = Object.prototype.toString,
-    hasOwnProperty = Object.prototype.hasOwnProperty,
-    supportsArgsClass = toString.call(arguments) == argsClass, // For less <IE9 && FF<4
-    supportNodeClass,
-    errorProto = Error.prototype,
-    objectProto = Object.prototype,
-    stringProto = String.prototype,
-    propertyIsEnumerable = objectProto.propertyIsEnumerable;
+var arrayBufferTag = '[object ArrayBuffer]',
+    float32Tag = '[object Float32Array]',
+    float64Tag = '[object Float64Array]',
+    int8Tag = '[object Int8Array]',
+    int16Tag = '[object Int16Array]',
+    int32Tag = '[object Int32Array]',
+    uint8Tag = '[object Uint8Array]',
+    uint8ClampedTag = '[object Uint8ClampedArray]',
+    uint16Tag = '[object Uint16Array]',
+    uint32Tag = '[object Uint32Array]';
 
-  try {
-    supportNodeClass = !(toString.call(document) == objectClass && !({ 'toString': 0 } + ''));
-  } catch (e) {
-    supportNodeClass = true;
-  }
+var typedArrayTags = {};
+typedArrayTags[float32Tag] = typedArrayTags[float64Tag] =
+typedArrayTags[int8Tag] = typedArrayTags[int16Tag] =
+typedArrayTags[int32Tag] = typedArrayTags[uint8Tag] =
+typedArrayTags[uint8ClampedTag] = typedArrayTags[uint16Tag] =
+typedArrayTags[uint32Tag] = true;
+typedArrayTags[argsTag] = typedArrayTags[arrayTag] =
+typedArrayTags[arrayBufferTag] = typedArrayTags[boolTag] =
+typedArrayTags[dateTag] = typedArrayTags[errorTag] =
+typedArrayTags[funcTag] = typedArrayTags[mapTag] =
+typedArrayTags[numberTag] = typedArrayTags[objectTag] =
+typedArrayTags[regexpTag] = typedArrayTags[setTag] =
+typedArrayTags[stringTag] = typedArrayTags[weakMapTag] = false;
 
-  var nonEnumProps = {};
-  nonEnumProps[arrayClass] = nonEnumProps[dateClass] = nonEnumProps[numberClass] = { 'constructor': true, 'toLocaleString': true, 'toString': true, 'valueOf': true };
-  nonEnumProps[boolClass] = nonEnumProps[stringClass] = { 'constructor': true, 'toString': true, 'valueOf': true };
-  nonEnumProps[errorClass] = nonEnumProps[funcClass] = nonEnumProps[regexpClass] = { 'constructor': true, 'toString': true };
-  nonEnumProps[objectClass] = { 'constructor': true };
+var objectProto = Object.prototype,
+    hasOwnProperty = objectProto.hasOwnProperty,
+    objToString = objectProto.toString,
+    MAX_SAFE_INTEGER = Math.pow(2, 53) - 1;
 
-  var support = {};
-  (function () {
-    var ctor = function() { this.x = 1; },
-      props = [];
+var keys = Object.keys || (function() {
+    var hasOwnProperty = Object.prototype.hasOwnProperty,
+        hasDontEnumBug = !({ toString: null }).propertyIsEnumerable('toString'),
+        dontEnums = [
+          'toString',
+          'toLocaleString',
+          'valueOf',
+          'hasOwnProperty',
+          'isPrototypeOf',
+          'propertyIsEnumerable',
+          'constructor'
+        ],
+        dontEnumsLength = dontEnums.length;
 
-    ctor.prototype = { 'valueOf': 1, 'y': 1 };
-    for (var key in new ctor) { props.push(key); }
-    for (key in arguments) { }
+    return function(obj) {
+      if (typeof obj !== 'object' && (typeof obj !== 'function' || obj === null)) {
+        throw new TypeError('Object.keys called on non-object');
+      }
 
-    // Detect if `name` or `message` properties of `Error.prototype` are enumerable by default.
-    support.enumErrorProps = propertyIsEnumerable.call(errorProto, 'message') || propertyIsEnumerable.call(errorProto, 'name');
+      var result = [], prop, i;
 
-    // Detect if `prototype` properties are enumerable by default.
-    support.enumPrototypes = propertyIsEnumerable.call(ctor, 'prototype');
+      for (prop in obj) {
+        if (hasOwnProperty.call(obj, prop)) {
+          result.push(prop);
+        }
+      }
 
-    // Detect if `arguments` object indexes are non-enumerable
-    support.nonEnumArgs = key != 0;
-
-    // Detect if properties shadowing those on `Object.prototype` are non-enumerable.
-    support.nonEnumShadows = !/valueOf/.test(props);
-  }(1));
-
-  var isObject = Rx.internals.isObject = function(value) {
-    var type = typeof value;
-    return value && (type == 'function' || type == 'object') || false;
-  };
-
-  function keysIn(object) {
-    var result = [];
-    if (!isObject(object)) {
+      if (hasDontEnumBug) {
+        for (i = 0; i < dontEnumsLength; i++) {
+          if (hasOwnProperty.call(obj, dontEnums[i])) {
+            result.push(dontEnums[i]);
+          }
+        }
+      }
       return result;
-    }
-    if (support.nonEnumArgs && object.length && isArguments(object)) {
-      object = slice.call(object);
-    }
-    var skipProto = support.enumPrototypes && typeof object == 'function',
-        skipErrorProps = support.enumErrorProps && (object === errorProto || object instanceof Error);
-
-    for (var key in object) {
-      if (!(skipProto && key == 'prototype') &&
-          !(skipErrorProps && (key == 'message' || key == 'name'))) {
-        result.push(key);
-      }
-    }
-
-    if (support.nonEnumShadows && object !== objectProto) {
-      var ctor = object.constructor,
-          index = -1,
-          length = dontEnumsLength;
-
-      if (object === (ctor && ctor.prototype)) {
-        var className = object === stringProto ? stringClass : object === errorProto ? errorClass : toString.call(object),
-            nonEnum = nonEnumProps[className];
-      }
-      while (++index < length) {
-        key = dontEnums[index];
-        if (!(nonEnum && nonEnum[key]) && hasOwnProperty.call(object, key)) {
-          result.push(key);
-        }
-      }
-    }
-    return result;
-  }
-
-  function internalFor(object, callback, keysFunc) {
-    var index = -1,
-      props = keysFunc(object),
-      length = props.length;
-
-    while (++index < length) {
-      var key = props[index];
-      if (callback(object[key], key, object) === false) {
-        break;
-      }
-    }
-    return object;
-  }
-
-  function internalForIn(object, callback) {
-    return internalFor(object, callback, keysIn);
-  }
-
-  function isNode(value) {
-    // IE < 9 presents DOM nodes as `Object` objects except they have `toString`
-    // methods that are `typeof` "string" and still can coerce nodes to strings
-    return typeof value.toString != 'function' && typeof (value + '') == 'string';
-  }
-
-  var isArguments = function(value) {
-    return (value && typeof value == 'object') ? toString.call(value) == argsClass : false;
-  }
-
-  // fallback for browsers that can't detect `arguments` objects by [[Class]]
-  if (!supportsArgsClass) {
-    isArguments = function(value) {
-      return (value && typeof value == 'object') ? hasOwnProperty.call(value, 'callee') : false;
     };
-  }
+  }());
 
-  var isEqual = Rx.internals.isEqual = function (x, y) {
-    return deepEquals(x, y, [], []);
+function equalObjects(object, other, equalFunc, isLoose, stackA, stackB) {
+  var objProps = keys(object),
+      objLength = objProps.length,
+      othProps = keys(other),
+      othLength = othProps.length;
+
+  if (objLength !== othLength && !isLoose) {
+    return false;
+  }
+  var index = objLength, key;
+  while (index--) {
+    key = objProps[index];
+    if (!(isLoose ? key in other : hasOwnProperty.call(other, key))) {
+      return false;
+    }
+  }
+  var skipCtor = isLoose;
+  while (++index < objLength) {
+    key = objProps[index];
+    var objValue = object[key],
+        othValue = other[key],
+        result;
+
+    if (!(result === undefined ? equalFunc(objValue, othValue, isLoose, stackA, stackB) : result)) {
+      return false;
+    }
+    skipCtor || (skipCtor = key === 'constructor');
+  }
+  if (!skipCtor) {
+    var objCtor = object.constructor,
+        othCtor = other.constructor;
+
+    if (objCtor !== othCtor &&
+        ('constructor' in object && 'constructor' in other) &&
+        !(typeof objCtor === 'function' && objCtor instanceof objCtor &&
+          typeof othCtor === 'function' && othCtor instanceof othCtor)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function equalByTag(object, other, tag) {
+  switch (tag) {
+    case boolTag:
+    case dateTag:
+      return +object === +other;
+
+    case errorTag:
+      return object.name === other.name && object.message === other.message;
+
+    case numberTag:
+      return (object !== +object) ?
+        other !== +other :
+        object === +other;
+
+    case regexpTag:
+    case stringTag:
+      return object === (other + '');
+  }
+  return false;
+}
+
+var isObject = Rx.internals.isObject = function(value) {
+  var type = typeof value;
+  return !!value && (type === 'object' || type === 'function');
+};
+
+function isObjectLike(value) {
+  return !!value && typeof value === 'object';
+}
+
+function isLength(value) {
+  return typeof value === 'number' && value > -1 && value % 1 === 0 && value <= MAX_SAFE_INTEGER;
+}
+
+var isHostObject = (function() {
+  try {
+    Object({ 'toString': 0 } + '');
+  } catch(e) {
+    return function() { return false; };
+  }
+  return function(value) {
+    return typeof value.toString !== 'function' && typeof (value + '') === 'string';
   };
+}());
 
-  /** @private
-   * Used for deep comparison
-   **/
-  function deepEquals(a, b, stackA, stackB) {
-    // exit early for identical values
-    if (a === b) {
-      // treat `+0` vs. `-0` as not equal
-      return a !== 0 || (1 / a == 1 / b);
+function isTypedArray(value) {
+  return isObjectLike(value) && isLength(value.length) && !!typedArrayTags[objToString.call(value)];
+}
+
+var isArray = Array.isArray || function(value) {
+  return isObjectLike(value) && isLength(value.length) && objToString.call(value) === arrayTag;
+};
+
+function arraySome (array, predicate) {
+  var index = -1,
+      length = array.length;
+
+  while (++index < length) {
+    if (predicate(array[index], index, array)) {
+      return true;
     }
-
-    var type = typeof a,
-        otherType = typeof b;
-
-    // exit early for unlike primitive values
-    if (a === a && (a == null || b == null ||
-        (type != 'function' && type != 'object' && otherType != 'function' && otherType != 'object'))) {
-      return false;
-    }
-
-    // compare [[Class]] names
-    var className = toString.call(a),
-        otherClass = toString.call(b);
-
-    if (className == argsClass) {
-      className = objectClass;
-    }
-    if (otherClass == argsClass) {
-      otherClass = objectClass;
-    }
-    if (className != otherClass) {
-      return false;
-    }
-    switch (className) {
-      case boolClass:
-      case dateClass:
-        // coerce dates and booleans to numbers, dates to milliseconds and booleans
-        // to `1` or `0` treating invalid dates coerced to `NaN` as not equal
-        return +a == +b;
-
-      case numberClass:
-        // treat `NaN` vs. `NaN` as equal
-        return (a != +a) ?
-          b != +b :
-          // but treat `-0` vs. `+0` as not equal
-          (a == 0 ? (1 / a == 1 / b) : a == +b);
-
-      case regexpClass:
-      case stringClass:
-        // coerce regexes to strings (http://es5.github.io/#x15.10.6.4)
-        // treat string primitives and their corresponding object instances as equal
-        return a == String(b);
-    }
-    var isArr = className == arrayClass;
-    if (!isArr) {
-
-      // exit for functions and DOM nodes
-      if (className != objectClass || (!support.nodeClass && (isNode(a) || isNode(b)))) {
-        return false;
-      }
-      // in older versions of Opera, `arguments` objects have `Array` constructors
-      var ctorA = !support.argsObject && isArguments(a) ? Object : a.constructor,
-          ctorB = !support.argsObject && isArguments(b) ? Object : b.constructor;
-
-      // non `Object` object instances with different constructors are not equal
-      if (ctorA != ctorB &&
-            !(hasOwnProperty.call(a, 'constructor') && hasOwnProperty.call(b, 'constructor')) &&
-            !(isFunction(ctorA) && ctorA instanceof ctorA && isFunction(ctorB) && ctorB instanceof ctorB) &&
-            ('constructor' in a && 'constructor' in b)
-          ) {
-        return false;
-      }
-    }
-    // assume cyclic structures are equal
-    // the algorithm for detecting cyclic structures is adapted from ES 5.1
-    // section 15.12.3, abstract operation `JO` (http://es5.github.io/#x15.12.3)
-    var initedStack = !stackA;
-    stackA || (stackA = []);
-    stackB || (stackB = []);
-
-    var length = stackA.length;
-    while (length--) {
-      if (stackA[length] == a) {
-        return stackB[length] == b;
-      }
-    }
-    var size = 0;
-    var result = true;
-
-    // add `a` and `b` to the stack of traversed objects
-    stackA.push(a);
-    stackB.push(b);
-
-    // recursively compare objects and arrays (susceptible to call stack limits)
-    if (isArr) {
-      // compare lengths to determine if a deep comparison is necessary
-      length = a.length;
-      size = b.length;
-      result = size == length;
-
-      if (result) {
-        // deep compare the contents, ignoring non-numeric properties
-        while (size--) {
-          var index = length,
-              value = b[size];
-
-          if (!(result = deepEquals(a[size], value, stackA, stackB))) {
-            break;
-          }
-        }
-      }
-    }
-    else {
-      // deep compare objects using `forIn`, instead of `forOwn`, to avoid `Object.keys`
-      // which, in this case, is more costly
-      internalForIn(b, function(value, key, b) {
-        if (hasOwnProperty.call(b, key)) {
-          // count the number of properties.
-          size++;
-          // deep compare each property value.
-          return (result = hasOwnProperty.call(a, key) && deepEquals(a[key], value, stackA, stackB));
-        }
-      });
-
-      if (result) {
-        // ensure both objects have the same number of properties
-        internalForIn(a, function(value, key, a) {
-          if (hasOwnProperty.call(a, key)) {
-            // `size` will be `-1` if `a` has more properties than `b`
-            return (result = --size > -1);
-          }
-        });
-      }
-    }
-    stackA.pop();
-    stackB.pop();
-
-    return result;
   }
+  return false;
+}
+
+function equalArrays(array, other, equalFunc, isLoose, stackA, stackB) {
+  var index = -1,
+      arrLength = array.length,
+      othLength = other.length;
+
+  if (arrLength !== othLength && !(isLoose && othLength > arrLength)) {
+    return false;
+  }
+  // Ignore non-index properties.
+  while (++index < arrLength) {
+    var arrValue = array[index],
+        othValue = other[index],
+        result;
+
+    if (result !== undefined) {
+      if (result) {
+        continue;
+      }
+      return false;
+    }
+    // Recursively compare arrays (susceptible to call stack limits).
+    if (isLoose) {
+      if (!arraySome(other, function(othValue) {
+            return arrValue === othValue || equalFunc(arrValue, othValue, isLoose, stackA, stackB);
+          })) {
+        return false;
+      }
+    } else if (!(arrValue === othValue || equalFunc(arrValue, othValue, isLoose, stackA, stackB))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function baseIsEqualDeep(object, other, equalFunc, isLoose, stackA, stackB) {
+  var objIsArr = isArray(object),
+      othIsArr = isArray(other),
+      objTag = arrayTag,
+      othTag = arrayTag;
+
+  if (!objIsArr) {
+    objTag = objToString.call(object);
+    if (objTag === argsTag) {
+      objTag = objectTag;
+    } else if (objTag !== objectTag) {
+      objIsArr = isTypedArray(object);
+    }
+  }
+  if (!othIsArr) {
+    othTag = objToString.call(other);
+    if (othTag === argsTag) {
+      othTag = objectTag;
+    } else if (othTag !== objectTag) {
+      othIsArr = isTypedArray(other);
+    }
+  }
+  var objIsObj = objTag === objectTag && !isHostObject(object),
+      othIsObj = othTag === objectTag && !isHostObject(other),
+      isSameTag = objTag === othTag;
+
+  if (isSameTag && !(objIsArr || objIsObj)) {
+    return equalByTag(object, other, objTag);
+  }
+  if (!isLoose) {
+    var objIsWrapped = objIsObj && hasOwnProperty.call(object, '__wrapped__'),
+        othIsWrapped = othIsObj && hasOwnProperty.call(other, '__wrapped__');
+
+    if (objIsWrapped || othIsWrapped) {
+      return equalFunc(objIsWrapped ? object.value() : object, othIsWrapped ? other.value() : other, isLoose, stackA, stackB);
+    }
+  }
+  if (!isSameTag) {
+    return false;
+  }
+  // Assume cyclic values are equal.
+  // For more information on detecting circular references see https://es5.github.io/#JO.
+  stackA || (stackA = []);
+  stackB || (stackB = []);
+
+  var length = stackA.length;
+  while (length--) {
+    if (stackA[length] === object) {
+      return stackB[length] === other;
+    }
+  }
+  // Add `object` and `other` to the stack of traversed objects.
+  stackA.push(object);
+  stackB.push(other);
+
+  var result = (objIsArr ? equalArrays : equalObjects)(object, other, equalFunc, isLoose, stackA, stackB);
+
+  stackA.pop();
+  stackB.pop();
+
+  return result;
+}
+
+function baseIsEqual(value, other, isLoose, stackA, stackB) {
+  if (value === other) {
+    return true;
+  }
+  if (value == null || other == null || (!isObject(value) && !isObjectLike(other))) {
+    return value !== value && other !== other;
+  }
+  return baseIsEqualDeep(value, other, baseIsEqual, isLoose, stackA, stackB);
+}
+
+var isEqual = Rx.internals.isEqual = function (value, other) {
+  return baseIsEqual(value, other);
+};
 
   var SchedulePeriodicRecursive = Rx.internals.SchedulePeriodicRecursive = (function () {
-    function tick(command, recurse) {
-      recurse(0, this._period);
-      try {
-        this._state = this._action(this._state);
-      } catch (e) {
-        this._cancel.dispose();
-        throw e;
-      }
+    function createTick(self) {
+      return function tick(command, recurse) {
+        recurse(0, self._period);
+        var state = tryCatch(self._action)(self._state);
+        if (state === errorObj) {
+          self._cancel.dispose();
+          thrower(state.e);
+        }
+        self._state = state;
+      };
     }
 
     function SchedulePeriodicRecursive(scheduler, state, period, action) {
@@ -442,7 +521,7 @@
     SchedulePeriodicRecursive.prototype.start = function () {
       var d = new SingleAssignmentDisposable();
       this._cancel = d;
-      d.setDisposable(this._scheduler.scheduleRecursiveWithRelativeAndState(0, this._period, tick.bind(this)));
+      d.setDisposable(this._scheduler.scheduleRecursiveFuture(0, this._period, createTick(this)));
 
       return d;
     };
@@ -450,116 +529,8 @@
     return SchedulePeriodicRecursive;
   }());
 
-  // Collections
-  function IndexedItem(id, value) {
-    this.id = id;
-    this.value = value;
-  }
-
-  IndexedItem.prototype.compareTo = function (other) {
-    var c = this.value.compareTo(other.value);
-    c === 0 && (c = this.id - other.id);
-    return c;
-  };
-
-  // Priority Queue for Scheduling
-  var PriorityQueue = Rx.internals.PriorityQueue = function (capacity) {
-    this.items = new Array(capacity);
-    this.length = 0;
-  };
-
-  var priorityProto = PriorityQueue.prototype;
-  priorityProto.isHigherPriority = function (left, right) {
-    return this.items[left].compareTo(this.items[right]) < 0;
-  };
-
-  priorityProto.percolate = function (index) {
-    if (index >= this.length || index < 0) { return; }
-    var parent = index - 1 >> 1;
-    if (parent < 0 || parent === index) { return; }
-    if (this.isHigherPriority(index, parent)) {
-      var temp = this.items[index];
-      this.items[index] = this.items[parent];
-      this.items[parent] = temp;
-      this.percolate(parent);
-    }
-  };
-
-  priorityProto.heapify = function (index) {
-    +index || (index = 0);
-    if (index >= this.length || index < 0) { return; }
-    var left = 2 * index + 1,
-        right = 2 * index + 2,
-        first = index;
-    if (left < this.length && this.isHigherPriority(left, first)) {
-      first = left;
-    }
-    if (right < this.length && this.isHigherPriority(right, first)) {
-      first = right;
-    }
-    if (first !== index) {
-      var temp = this.items[index];
-      this.items[index] = this.items[first];
-      this.items[first] = temp;
-      this.heapify(first);
-    }
-  };
-
-  priorityProto.peek = function () { return this.items[0].value; };
-
-  priorityProto.removeAt = function (index) {
-    this.items[index] = this.items[--this.length];
-    this.items[this.length] = undefined;
-    this.heapify();
-  };
-
-  priorityProto.dequeue = function () {
-    var result = this.peek();
-    this.removeAt(0);
-    return result;
-  };
-
-  priorityProto.enqueue = function (item) {
-    var index = this.length++;
-    this.items[index] = new IndexedItem(PriorityQueue.count++, item);
-    this.percolate(index);
-  };
-
-  priorityProto.remove = function (item) {
-    for (var i = 0; i < this.length; i++) {
-      if (this.items[i].value === item) {
-        this.removeAt(i);
-        return true;
-      }
-    }
-    return false;
-  };
-  PriorityQueue.count = 0;
-
   /** Provides a set of extension methods for virtual time scheduling. */
   var VirtualTimeScheduler = Rx.VirtualTimeScheduler = (function (__super__) {
-
-    function localNow() {
-      return this.toDateTimeOffset(this.clock);
-    }
-
-    function scheduleNow(state, action) {
-      return this.scheduleAbsoluteWithState(state, this.clock, action);
-    }
-
-    function scheduleRelative(state, dueTime, action) {
-      return this.scheduleRelativeWithState(state, this.toRelative(dueTime), action);
-    }
-
-    function scheduleAbsolute(state, dueTime, action) {
-      return this.scheduleRelativeWithState(state, this.toRelative(dueTime - this.now()), action);
-    }
-
-    function invokeAction(scheduler, action) {
-      action();
-      return disposableEmpty;
-    }
-
     inherits(VirtualTimeScheduler, __super__);
 
     /**
@@ -574,10 +545,26 @@
       this.comparer = comparer;
       this.isEnabled = false;
       this.queue = new PriorityQueue(1024);
-      __super__.call(this, localNow, scheduleNow, scheduleRelative, scheduleAbsolute);
+      __super__.call(this);
     }
 
     var VirtualTimeSchedulerPrototype = VirtualTimeScheduler.prototype;
+
+    VirtualTimeSchedulerPrototype.now = function () {
+      return this.toAbsoluteTime(this.clock);
+    };
+
+    VirtualTimeSchedulerPrototype.schedule = function (state, action) {
+      return this.scheduleAbsolute(state, this.clock, action);
+    };
+
+    VirtualTimeSchedulerPrototype.scheduleFuture = function (state, dueTime, action) {
+      var dt = dueTime instanceof Date ?
+        this.toRelativeTime(dueTime - this.now()) :
+        this.toRelativeTime(dueTime);
+
+      return this.scheduleRelative(state, dt, action);
+    };
 
     /**
      * Adds a relative time value to an absolute time value.
@@ -592,14 +579,14 @@
      * @param {Any} The absolute time.
      * @returns {Number} The absolute time in ms
      */
-    VirtualTimeSchedulerPrototype.toDateTimeOffset = notImplemented;
+    VirtualTimeSchedulerPrototype.toAbsoluteTime = notImplemented;
 
     /**
      * Converts the TimeSpan value to a relative virtual time value.
      * @param {Number} timeSpan TimeSpan value to convert.
      * @return {Number} Corresponding relative virtual time value.
      */
-    VirtualTimeSchedulerPrototype.toRelative = notImplemented;
+    VirtualTimeSchedulerPrototype.toRelativeTime = notImplemented;
 
     /**
      * Schedules a periodic piece of work by dynamically discovering the scheduler's capabilities. The periodic task will be emulated using recursive scheduling.
@@ -608,7 +595,7 @@
      * @param {Function} action Action to be executed, potentially updating the state.
      * @returns {Disposable} The disposable object used to cancel the scheduled recurring action (best effort).
      */
-    VirtualTimeSchedulerPrototype.schedulePeriodicWithState = function (state, period, action) {
+    VirtualTimeSchedulerPrototype.schedulePeriodic = function (state, period, action) {
       var s = new SchedulePeriodicRecursive(this, state, period, action);
       return s.start();
     };
@@ -620,19 +607,9 @@
      * @param {Function} action Action to be executed.
      * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
      */
-    VirtualTimeSchedulerPrototype.scheduleRelativeWithState = function (state, dueTime, action) {
+    VirtualTimeSchedulerPrototype.scheduleRelative = function (state, dueTime, action) {
       var runAt = this.add(this.clock, dueTime);
-      return this.scheduleAbsoluteWithState(state, runAt, action);
-    };
-
-    /**
-     * Schedules an action to be executed at dueTime.
-     * @param {Number} dueTime Relative time after which to execute the action.
-     * @param {Function} action Action to be executed.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    VirtualTimeSchedulerPrototype.scheduleRelative = function (dueTime, action) {
-      return this.scheduleRelativeWithState(action, dueTime, invokeAction);
+      return this.scheduleAbsolute(state, runAt, action);
     };
 
     /**
@@ -725,23 +702,12 @@
 
     /**
      * Schedules an action to be executed at dueTime.
-     * @param {Scheduler} scheduler Scheduler to execute the action on.
-     * @param {Number} dueTime Absolute time at which to execute the action.
-     * @param {Function} action Action to be executed.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    VirtualTimeSchedulerPrototype.scheduleAbsolute = function (dueTime, action) {
-      return this.scheduleAbsoluteWithState(action, dueTime, invokeAction);
-    };
-
-    /**
-     * Schedules an action to be executed at dueTime.
      * @param {Mixed} state State passed to the action to be executed.
      * @param {Number} dueTime Absolute time at which to execute the action.
      * @param {Function} action Action to be executed.
      * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
      */
-    VirtualTimeSchedulerPrototype.scheduleAbsoluteWithState = function (state, dueTime, action) {
+    VirtualTimeSchedulerPrototype.scheduleAbsolute = function (state, dueTime, action) {
       var self = this;
 
       function run(scheduler, state1) {
@@ -760,7 +726,7 @@
 
 function OnNextPredicate(predicate) {
     this.predicate = predicate;
-};
+}
 
 OnNextPredicate.prototype.equals = function (other) {
   if (other === this) { return true; }
@@ -771,13 +737,13 @@ OnNextPredicate.prototype.equals = function (other) {
 
 function OnErrorPredicate(predicate) {
   this.predicate = predicate;
-};
+}
 
 OnErrorPredicate.prototype.equals = function (other) {
   if (other === this) { return true; }
   if (other == null) { return false; }
   if (other.kind !== 'E') { return false; }
-  return this.predicate(other.exception);
+  return this.predicate(other.error);
 };
 
 var ReactiveTest = Rx.ReactiveTest = {
@@ -926,8 +892,8 @@ var ReactiveTest = Rx.ReactiveTest = {
       this.messages.push(new Recorded(this.scheduler.clock, Notification.createOnNext(value)));
     };
 
-    MockObserverPrototype.onError = function (exception) {
-      this.messages.push(new Recorded(this.scheduler.clock, Notification.createOnError(exception)));
+    MockObserverPrototype.onError = function (e) {
+      this.messages.push(new Recorded(this.scheduler.clock, Notification.createOnError(e)));
     };
 
     MockObserverPrototype.onCompleted = function () {
@@ -947,7 +913,7 @@ var ReactiveTest = Rx.ReactiveTest = {
       var message = this.messages[i],
           notification = message.value;
       (function (innerNotification) {
-        scheduler.scheduleAbsoluteWithState(null, message.time, function () {
+        scheduler.scheduleAbsolute(null, message.time, function () {
           var obs = self.observers.slice(0);
 
           for (var j = 0, jLen = obs.length; j < jLen; j++) {
@@ -993,23 +959,10 @@ var ReactiveTest = Rx.ReactiveTest = {
   };
 
   var HotObservable = (function (__super__) {
-
-    function subscribe(observer) {
-      var observable = this;
-      this.observers.push(observer);
-      this.subscriptions.push(new Subscription(this.scheduler.clock));
-      var index = this.subscriptions.length - 1;
-      return disposableCreate(function () {
-        var idx = observable.observers.indexOf(observer);
-        observable.observers.splice(idx, 1);
-        observable.subscriptions[index] = new Subscription(observable.subscriptions[index].subscribe, observable.scheduler.clock);
-      });
-    }
-
     inherits(HotObservable, __super__);
 
     function HotObservable(scheduler, messages) {
-      __super__.call(this, subscribe);
+      __super__.call(this);
       var message, notification, observable = this;
       this.scheduler = scheduler;
       this.messages = messages;
@@ -1019,7 +972,7 @@ var ReactiveTest = Rx.ReactiveTest = {
         message = this.messages[i];
         notification = message.value;
         (function (innerNotification) {
-          scheduler.scheduleAbsoluteWithState(null, message.time, function () {
+          scheduler.scheduleAbsolute(null, message.time, function () {
             var obs = observable.observers.slice(0);
 
             for (var j = 0, jLen = obs.length; j < jLen; j++) {
@@ -1031,12 +984,32 @@ var ReactiveTest = Rx.ReactiveTest = {
       }
     }
 
+    HotObservable.prototype._subscribe = function (o) {
+      var observable = this;
+      this.observers.push(o);
+      this.subscriptions.push(new Subscription(this.scheduler.clock));
+      var index = this.subscriptions.length - 1;
+      return disposableCreate(function () {
+        var idx = observable.observers.indexOf(o);
+        observable.observers.splice(idx, 1);
+        observable.subscriptions[index] = new Subscription(observable.subscriptions[index].subscribe, observable.scheduler.clock);
+      });
+    };
+
     return HotObservable;
   })(Observable);
 
   var ColdObservable = (function (__super__) {
+    inherits(ColdObservable, __super__);
 
-    function subscribe(observer) {
+    function ColdObservable(scheduler, messages) {
+      __super__.call(this);
+      this.scheduler = scheduler;
+      this.messages = messages;
+      this.subscriptions = [];
+    }
+
+    ColdObservable.prototype._subscribe = function (o) {
       var message, notification, observable = this;
       this.subscriptions.push(new Subscription(this.scheduler.clock));
       var index = this.subscriptions.length - 1;
@@ -1045,8 +1018,8 @@ var ReactiveTest = Rx.ReactiveTest = {
         message = this.messages[i];
         notification = message.value;
         (function (innerNotification) {
-          d.add(observable.scheduler.scheduleRelativeWithState(null, message.time, function () {
-            innerNotification.accept(observer);
+          d.add(observable.scheduler.scheduleRelative(null, message.time, function () {
+            innerNotification.accept(o);
             return disposableEmpty;
           }));
         })(notification);
@@ -1055,16 +1028,7 @@ var ReactiveTest = Rx.ReactiveTest = {
         observable.subscriptions[index] = new Subscription(observable.subscriptions[index].subscribe, observable.scheduler.clock);
         d.dispose();
       });
-    }
-
-    inherits(ColdObservable, __super__);
-
-    function ColdObservable(scheduler, messages) {
-      __super__.call(this, subscribe);
-      this.scheduler = scheduler;
-      this.messages = messages;
-      this.subscriptions = [];
-    }
+    };
 
     return ColdObservable;
   })(Observable);
@@ -1089,9 +1053,9 @@ var ReactiveTest = Rx.ReactiveTest = {
      * @param action Action to be executed.
      * @return Disposable object used to cancel the scheduled action (best effort).
      */
-    TestScheduler.prototype.scheduleAbsoluteWithState = function (state, dueTime, action) {
+    TestScheduler.prototype.scheduleAbsolute = function (state, dueTime, action) {
       dueTime <= this.clock && (dueTime = this.clock + 1);
-        return __super__.prototype.scheduleAbsoluteWithState.call(this, state, dueTime, action);
+      return __super__.prototype.scheduleAbsolute.call(this, state, dueTime, action);
     };
     /**
      * Adds a relative virtual time to an absolute virtual time value.
@@ -1109,7 +1073,7 @@ var ReactiveTest = Rx.ReactiveTest = {
      * @param absolute Absolute virtual time value to convert.
      * @return Corresponding DateTimeOffset value.
      */
-    TestScheduler.prototype.toDateTimeOffset = function (absolute) {
+    TestScheduler.prototype.toAbsoluteTime = function (absolute) {
       return new Date(absolute).getTime();
     };
     /**
@@ -1118,7 +1082,7 @@ var ReactiveTest = Rx.ReactiveTest = {
      * @param timeSpan TimeSpan value to convert.
      * @return Corresponding relative virtual time value.
      */
-    TestScheduler.prototype.toRelative = function (timeSpan) {
+    TestScheduler.prototype.toRelativeTime = function (timeSpan) {
       return timeSpan;
     };
     /**
@@ -1130,20 +1094,25 @@ var ReactiveTest = Rx.ReactiveTest = {
      * @param disposed Virtual time at which to dispose the subscription.
      * @return Observer with timestamped recordings of notification messages that were received during the virtual time window when the subscription to the source sequence was active.
      */
-    TestScheduler.prototype.startWithTiming = function (create, created, subscribed, disposed) {
+    TestScheduler.prototype.startScheduler = function (createFn, settings) {
+      settings || (settings = {});
+      settings.created == null && (settings.created = ReactiveTest.created);
+      settings.subscribed == null && (settings.subscribed = ReactiveTest.subscribed);
+      settings.disposed == null && (settings.disposed = ReactiveTest.disposed);
+
       var observer = this.createObserver(), source, subscription;
 
-      this.scheduleAbsoluteWithState(null, created, function () {
-        source = create();
+      this.scheduleAbsolute(null, settings.created, function () {
+        source = createFn();
         return disposableEmpty;
       });
 
-      this.scheduleAbsoluteWithState(null, subscribed, function () {
+      this.scheduleAbsolute(null, settings.subscribed, function () {
         subscription = source.subscribe(observer);
         return disposableEmpty;
       });
 
-      this.scheduleAbsoluteWithState(null, disposed, function () {
+      this.scheduleAbsolute(null, settings.disposed, function () {
         subscription.dispose();
         return disposableEmpty;
       });
@@ -1151,28 +1120,6 @@ var ReactiveTest = Rx.ReactiveTest = {
       this.start();
 
       return observer;
-    };
-
-    /**
-     * Starts the test scheduler and uses the specified virtual time to dispose the subscription to the sequence obtained through the factory function.
-     * Default virtual times are used for factory invocation and sequence subscription.
-     *
-     * @param create Factory method to create an observable sequence.
-     * @param disposed Virtual time at which to dispose the subscription.
-     * @return Observer with timestamped recordings of notification messages that were received during the virtual time window when the subscription to the source sequence was active.
-     */
-    TestScheduler.prototype.startWithDispose = function (create, disposed) {
-        return this.startWithTiming(create, ReactiveTest.created, ReactiveTest.subscribed, disposed);
-    };
-
-    /**
-     * Starts the test scheduler and uses default virtual times to invoke the factory function, to subscribe to the resulting sequence, and to dispose the subscription.
-     *
-     * @param create Factory method to create an observable sequence.
-     * @return Observer with timestamped recordings of notification messages that were received during the virtual time window when the subscription to the source sequence was active.
-     */
-    TestScheduler.prototype.startWithCreate = function (create) {
-        return this.startWithTiming(create, ReactiveTest.created, ReactiveTest.subscribed, ReactiveTest.disposed);
     };
 
     /**

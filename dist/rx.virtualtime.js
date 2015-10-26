@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
+// Copyright (c) Microsoft, All rights reserved. See License.txt in the project root for license information.
 
 ;(function (factory) {
   var objectTypes = {
@@ -6,15 +6,18 @@
     'object': true
   };
 
-  var
-    freeExports = objectTypes[typeof exports] && exports && !exports.nodeType && exports,
-    freeSelf = objectTypes[typeof self] && self.Object && self,
-    freeWindow = objectTypes[typeof window] && window && window.Object && window,
-    freeModule = objectTypes[typeof module] && module && !module.nodeType && module,
-    moduleExports = freeModule && freeModule.exports === freeExports && freeExports,
-    freeGlobal = freeExports && freeModule && typeof global == 'object' && global && global.Object && global;
+  function checkGlobal(value) {
+    return (value && value.Object === Object) ? value : null;
+  }
 
-  var root = root = freeGlobal || ((freeWindow !== (this && this.window)) && freeWindow) || freeSelf || this;
+  var freeExports = (objectTypes[typeof exports] && exports && !exports.nodeType) ? exports : null;
+  var freeModule = (objectTypes[typeof module] && module && !module.nodeType) ? module : null;
+  var freeGlobal = checkGlobal(freeExports && freeModule && typeof global === 'object' && global);
+  var freeSelf = checkGlobal(objectTypes[typeof self] && self);
+  var freeWindow = checkGlobal(objectTypes[typeof window] && window);
+  var moduleExports = (freeModule && freeModule.exports === freeExports) ? freeExports : null;
+  var thisGlobal = checkGlobal(objectTypes[typeof this] && this);
+  var root = freeGlobal || ((freeWindow !== (thisGlobal && thisGlobal.window)) && freeWindow) || freeSelf || thisGlobal || Function('return this')();
 
   // Because of build optimizers
   if (typeof define === 'function' && define.amd) {
@@ -32,121 +35,13 @@
   var Scheduler = Rx.Scheduler,
     ScheduledItem = Rx.internals.ScheduledItem,
     SchedulePeriodicRecursive  = Rx.internals.SchedulePeriodicRecursive,
-    disposableEmpty = Rx.Disposable.empty,
+    PriorityQueue = Rx.internals.PriorityQueue,
     inherits = Rx.internals.inherits,
     defaultSubComparer = Rx.helpers.defaultSubComparer,
     notImplemented = Rx.helpers.notImplemented;
 
-  // Collections
-  function IndexedItem(id, value) {
-    this.id = id;
-    this.value = value;
-  }
-
-  IndexedItem.prototype.compareTo = function (other) {
-    var c = this.value.compareTo(other.value);
-    c === 0 && (c = this.id - other.id);
-    return c;
-  };
-
-  // Priority Queue for Scheduling
-  var PriorityQueue = Rx.internals.PriorityQueue = function (capacity) {
-    this.items = new Array(capacity);
-    this.length = 0;
-  };
-
-  var priorityProto = PriorityQueue.prototype;
-  priorityProto.isHigherPriority = function (left, right) {
-    return this.items[left].compareTo(this.items[right]) < 0;
-  };
-
-  priorityProto.percolate = function (index) {
-    if (index >= this.length || index < 0) { return; }
-    var parent = index - 1 >> 1;
-    if (parent < 0 || parent === index) { return; }
-    if (this.isHigherPriority(index, parent)) {
-      var temp = this.items[index];
-      this.items[index] = this.items[parent];
-      this.items[parent] = temp;
-      this.percolate(parent);
-    }
-  };
-
-  priorityProto.heapify = function (index) {
-    +index || (index = 0);
-    if (index >= this.length || index < 0) { return; }
-    var left = 2 * index + 1,
-        right = 2 * index + 2,
-        first = index;
-    if (left < this.length && this.isHigherPriority(left, first)) {
-      first = left;
-    }
-    if (right < this.length && this.isHigherPriority(right, first)) {
-      first = right;
-    }
-    if (first !== index) {
-      var temp = this.items[index];
-      this.items[index] = this.items[first];
-      this.items[first] = temp;
-      this.heapify(first);
-    }
-  };
-
-  priorityProto.peek = function () { return this.items[0].value; };
-
-  priorityProto.removeAt = function (index) {
-    this.items[index] = this.items[--this.length];
-    this.items[this.length] = undefined;
-    this.heapify();
-  };
-
-  priorityProto.dequeue = function () {
-    var result = this.peek();
-    this.removeAt(0);
-    return result;
-  };
-
-  priorityProto.enqueue = function (item) {
-    var index = this.length++;
-    this.items[index] = new IndexedItem(PriorityQueue.count++, item);
-    this.percolate(index);
-  };
-
-  priorityProto.remove = function (item) {
-    for (var i = 0; i < this.length; i++) {
-      if (this.items[i].value === item) {
-        this.removeAt(i);
-        return true;
-      }
-    }
-    return false;
-  };
-  PriorityQueue.count = 0;
-
   /** Provides a set of extension methods for virtual time scheduling. */
   var VirtualTimeScheduler = Rx.VirtualTimeScheduler = (function (__super__) {
-
-    function localNow() {
-      return this.toDateTimeOffset(this.clock);
-    }
-
-    function scheduleNow(state, action) {
-      return this.scheduleAbsoluteWithState(state, this.clock, action);
-    }
-
-    function scheduleRelative(state, dueTime, action) {
-      return this.scheduleRelativeWithState(state, this.toRelative(dueTime), action);
-    }
-
-    function scheduleAbsolute(state, dueTime, action) {
-      return this.scheduleRelativeWithState(state, this.toRelative(dueTime - this.now()), action);
-    }
-
-    function invokeAction(scheduler, action) {
-      action();
-      return disposableEmpty;
-    }
-
     inherits(VirtualTimeScheduler, __super__);
 
     /**
@@ -161,10 +56,26 @@
       this.comparer = comparer;
       this.isEnabled = false;
       this.queue = new PriorityQueue(1024);
-      __super__.call(this, localNow, scheduleNow, scheduleRelative, scheduleAbsolute);
+      __super__.call(this);
     }
 
     var VirtualTimeSchedulerPrototype = VirtualTimeScheduler.prototype;
+
+    VirtualTimeSchedulerPrototype.now = function () {
+      return this.toAbsoluteTime(this.clock);
+    };
+
+    VirtualTimeSchedulerPrototype.schedule = function (state, action) {
+      return this.scheduleAbsolute(state, this.clock, action);
+    };
+
+    VirtualTimeSchedulerPrototype.scheduleFuture = function (state, dueTime, action) {
+      var dt = dueTime instanceof Date ?
+        this.toRelativeTime(dueTime - this.now()) :
+        this.toRelativeTime(dueTime);
+
+      return this.scheduleRelative(state, dt, action);
+    };
 
     /**
      * Adds a relative time value to an absolute time value.
@@ -179,14 +90,14 @@
      * @param {Any} The absolute time.
      * @returns {Number} The absolute time in ms
      */
-    VirtualTimeSchedulerPrototype.toDateTimeOffset = notImplemented;
+    VirtualTimeSchedulerPrototype.toAbsoluteTime = notImplemented;
 
     /**
      * Converts the TimeSpan value to a relative virtual time value.
      * @param {Number} timeSpan TimeSpan value to convert.
      * @return {Number} Corresponding relative virtual time value.
      */
-    VirtualTimeSchedulerPrototype.toRelative = notImplemented;
+    VirtualTimeSchedulerPrototype.toRelativeTime = notImplemented;
 
     /**
      * Schedules a periodic piece of work by dynamically discovering the scheduler's capabilities. The periodic task will be emulated using recursive scheduling.
@@ -195,7 +106,7 @@
      * @param {Function} action Action to be executed, potentially updating the state.
      * @returns {Disposable} The disposable object used to cancel the scheduled recurring action (best effort).
      */
-    VirtualTimeSchedulerPrototype.schedulePeriodicWithState = function (state, period, action) {
+    VirtualTimeSchedulerPrototype.schedulePeriodic = function (state, period, action) {
       var s = new SchedulePeriodicRecursive(this, state, period, action);
       return s.start();
     };
@@ -207,19 +118,9 @@
      * @param {Function} action Action to be executed.
      * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
      */
-    VirtualTimeSchedulerPrototype.scheduleRelativeWithState = function (state, dueTime, action) {
+    VirtualTimeSchedulerPrototype.scheduleRelative = function (state, dueTime, action) {
       var runAt = this.add(this.clock, dueTime);
-      return this.scheduleAbsoluteWithState(state, runAt, action);
-    };
-
-    /**
-     * Schedules an action to be executed at dueTime.
-     * @param {Number} dueTime Relative time after which to execute the action.
-     * @param {Function} action Action to be executed.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    VirtualTimeSchedulerPrototype.scheduleRelative = function (dueTime, action) {
-      return this.scheduleRelativeWithState(action, dueTime, invokeAction);
+      return this.scheduleAbsolute(state, runAt, action);
     };
 
     /**
@@ -312,23 +213,12 @@
 
     /**
      * Schedules an action to be executed at dueTime.
-     * @param {Scheduler} scheduler Scheduler to execute the action on.
-     * @param {Number} dueTime Absolute time at which to execute the action.
-     * @param {Function} action Action to be executed.
-     * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
-     */
-    VirtualTimeSchedulerPrototype.scheduleAbsolute = function (dueTime, action) {
-      return this.scheduleAbsoluteWithState(action, dueTime, invokeAction);
-    };
-
-    /**
-     * Schedules an action to be executed at dueTime.
      * @param {Mixed} state State passed to the action to be executed.
      * @param {Number} dueTime Absolute time at which to execute the action.
      * @param {Function} action Action to be executed.
      * @returns {Disposable} The disposable object used to cancel the scheduled action (best effort).
      */
-    VirtualTimeSchedulerPrototype.scheduleAbsoluteWithState = function (state, dueTime, action) {
+    VirtualTimeSchedulerPrototype.scheduleAbsolute = function (state, dueTime, action) {
       var self = this;
 
       function run(scheduler, state1) {
@@ -373,7 +263,7 @@
       return absolute + relative;
     };
 
-    HistoricalSchedulerProto.toDateTimeOffset = function (absolute) {
+    HistoricalSchedulerProto.toAbsoluteTime = function (absolute) {
       return new Date(absolute).getTime();
     };
 
@@ -383,7 +273,7 @@
      * @param {Number} timeSpan TimeSpan value to convert.
      * @return {Number} Corresponding relative virtual time value.
      */
-    HistoricalSchedulerProto.toRelative = function (timeSpan) {
+    HistoricalSchedulerProto.toRelativeTime = function (timeSpan) {
       return timeSpan;
     };
 

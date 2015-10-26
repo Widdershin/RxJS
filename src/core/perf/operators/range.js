@@ -7,36 +7,26 @@
       __super__.call(this);
     }
 
-    RangeObservable.prototype.subscribeCore = function (observer) {
-      var sink = new RangeSink(observer, this);
-      return sink.run();
+    function loopRecursive(start, count, o) {
+      return function loop (i, recurse) {
+        if (i < count) {
+          o.onNext(start + i);
+          recurse(i + 1);
+        } else {
+          o.onCompleted();
+        }
+      };
+    }
+
+    RangeObservable.prototype.subscribeCore = function (o) {
+      return this.scheduler.scheduleRecursive(
+        0,
+        loopRecursive(this.start, this.rangeCount, o)
+      );
     };
 
     return RangeObservable;
   }(ObservableBase));
-
-  var RangeSink = (function () {
-    function RangeSink(observer, parent) {
-      this.observer = observer;
-      this.parent = parent;
-    }
-
-    RangeSink.prototype.run = function () {
-      var start = this.parent.start, count = this.parent.rangeCount, observer = this.observer;
-      function loopRecursive(i, recurse) {
-        if (i < count) {
-          observer.onNext(start + i);
-          recurse(i + 1);
-        } else {
-          observer.onCompleted();
-        }
-      }
-
-      return this.parent.scheduler.scheduleRecursiveWithState(0, loopRecursive);
-    };
-
-    return RangeSink;
-  }());
 
   /**
   *  Generates an observable sequence of integral numbers within a specified range, using the specified scheduler to send out observer messages.

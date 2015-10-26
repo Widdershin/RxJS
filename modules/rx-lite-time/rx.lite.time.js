@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
+// Copyright (c) Microsoft, All rights reserved. See License.txt in the project root for license information.
 
 ;(function (factory) {
   var objectTypes = {
@@ -6,15 +6,18 @@
     'object': true
   };
 
-  var
-    freeExports = objectTypes[typeof exports] && exports && !exports.nodeType && exports,
-    freeSelf = objectTypes[typeof self] && self.Object && self,
-    freeWindow = objectTypes[typeof window] && window && window.Object && window,
-    freeModule = objectTypes[typeof module] && module && !module.nodeType && module,
-    moduleExports = freeModule && freeModule.exports === freeExports && freeExports,
-    freeGlobal = freeExports && freeModule && typeof global == 'object' && global && global.Object && global;
+  function checkGlobal(value) {
+    return (value && value.Object === Object) ? value : null;
+  }
 
-  var root = root = freeGlobal || ((freeWindow !== (this && this.window)) && freeWindow) || freeSelf || this;
+  var freeExports = (objectTypes[typeof exports] && exports && !exports.nodeType) ? exports : null;
+  var freeModule = (objectTypes[typeof module] && module && !module.nodeType) ? module : null;
+  var freeGlobal = checkGlobal(freeExports && freeModule && typeof global === 'object' && global);
+  var freeSelf = checkGlobal(objectTypes[typeof self] && self);
+  var freeWindow = checkGlobal(objectTypes[typeof window] && window);
+  var moduleExports = (freeModule && freeModule.exports === freeExports) ? freeExports : null;
+  var thisGlobal = checkGlobal(objectTypes[typeof this] && this);
+  var root = freeGlobal || ((freeWindow !== (thisGlobal && thisGlobal.window)) && freeWindow) || freeSelf || thisGlobal || Function('return this')();
 
   // Because of build optimizers
   if (typeof define === 'function' && define.amd) {
@@ -29,18 +32,22 @@
 }.call(this, function (root, exp, Rx, undefined) {
 
   // Refernces
-  var Observable = Rx.Observable,
+  var inherits = Rx.internals.inherits,
+    AbstractObserver = Rx.internals.AbstractObserver,
+    Observable = Rx.Observable,
     observableProto = Observable.prototype,
     AnonymousObservable = Rx.AnonymousObservable,
+    ObservableBase = Rx.ObservableBase,
     observableDefer = Observable.defer,
     observableEmpty = Observable.empty,
     observableNever = Observable.never,
     observableThrow = Observable['throw'],
     observableFromArray = Observable.fromArray,
-    timeoutScheduler = Rx.Scheduler['default'],
+    defaultScheduler = Rx.Scheduler['default'],
     SingleAssignmentDisposable = Rx.SingleAssignmentDisposable,
     SerialDisposable = Rx.SerialDisposable,
     CompositeDisposable = Rx.CompositeDisposable,
+    BinaryDisposable = Rx.BinaryDisposable,
     RefCountDisposable = Rx.RefCountDisposable,
     Subject = Rx.Subject,
     addRef = Rx.internals.addRef,
@@ -52,20 +59,23 @@
     observableFromPromise = Observable.fromPromise;
 
   var errorObj = {e: {}};
-  var tryCatchTarget;
-  function tryCatcher() {
-    try {
-      return tryCatchTarget.apply(this, arguments);
-    } catch (e) {
-      errorObj.e = e;
-      return errorObj;
-    }
+  
+  function tryCatcherGen(tryCatchTarget) {
+    return function tryCatcher() {
+      try {
+        return tryCatchTarget.apply(this, arguments);
+      } catch (e) {
+        errorObj.e = e;
+        return errorObj;
+      }
+    };
   }
-  function tryCatch(fn) {
+
+  var tryCatch = Rx.internals.tryCatch = function tryCatch(fn) {
     if (!isFunction(fn)) { throw new TypeError('fn must be a function'); }
-    tryCatchTarget = fn;
-    return tryCatcher;
-  }
+    return tryCatcherGen(fn);
+  };
+
   function thrower(e) {
     throw e;
   }
@@ -80,7 +90,7 @@
   observableProto.windowWithTime = function (timeSpan, timeShiftOrScheduler, scheduler) {
     var source = this, timeShift;
     timeShiftOrScheduler == null && (timeShift = timeSpan);
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
     if (typeof timeShiftOrScheduler === 'number') {
       timeShift = timeShiftOrScheduler;
     } else if (isScheduler(timeShiftOrScheduler)) {
@@ -120,7 +130,7 @@
         if (isShift) {
           nextShift += timeShift;
         }
-        m.setDisposable(scheduler.scheduleWithRelative(ts, function () {
+        m.setDisposable(scheduler.scheduleFuture(null, ts, function () {
           if (isShift) {
             var s = new Subject();
             q.push(s);
@@ -159,7 +169,7 @@
    */
   observableProto.windowWithTimeOrCount = function (timeSpan, count, scheduler) {
     var source = this;
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
     return new AnonymousObservable(function (observer) {
       var timerD = new SerialDisposable(),
           groupDisposable = new CompositeDisposable(timerD),
@@ -171,7 +181,7 @@
       function createTimer(id) {
         var m = new SingleAssignmentDisposable();
         timerD.setDisposable(m);
-        m.setDisposable(scheduler.scheduleWithRelative(timeSpan, function () {
+        m.setDisposable(scheduler.scheduleFuture(null, timeSpan, function () {
           if (id !== windowId) { return; }
           n = 0;
           var newId = ++windowId;
@@ -237,6 +247,42 @@
     return this.windowWithTimeOrCount(timeSpan, count, scheduler).flatMap(toArray);
   };
 
+  var TimeIntervalObservable = (function (__super__) {
+    inherits(TimeIntervalObservable, __super__);
+    function TimeIntervalObservable(source, s) {
+      this.source = source;
+      this._s = s;
+      __super__.call(this);
+    }
+
+    TimeIntervalObservable.prototype.subscribeCore = function (o) {
+      return this.source.subscribe(new TimeIntervalObserver(o, this._s));
+    };
+
+    return TimeIntervalObservable;
+  }(ObservableBase));
+
+  var TimeIntervalObserver = (function (__super__) {
+    inherits(TimeIntervalObserver, __super__);
+
+    function TimeIntervalObserver(o, s) {
+      this._o = o;
+      this._s = s;
+      this._l = s.now();
+      __super__.call(this);
+    }
+
+    TimeIntervalObserver.prototype.next = function (x) {
+      var now = this._s.now(), span = now - this._l;
+      this._l = now;
+      this._o.onNext({ value: x, interval: span });
+    };
+    TimeIntervalObserver.prototype.error = function (e) { this._o.onError(e); };
+    TimeIntervalObserver.prototype.completed = function () { this._o.onCompleted(); };
+
+    return TimeIntervalObserver;
+  }(AbstractObserver));
+
   /**
    *  Records the time interval between consecutive values in an observable sequence.
    *
@@ -248,20 +294,56 @@
    * @returns {Observable} An observable sequence with time interval information on values.
    */
   observableProto.timeInterval = function (scheduler) {
-    var source = this;
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
-    return observableDefer(function () {
-      var last = scheduler.now();
-      return source.map(function (x) {
-        var now = scheduler.now(), span = now - last;
-        last = now;
-        return { value: x, interval: span };
-      });
-    });
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
+    return new TimeIntervalObservable(this, scheduler);
   };
 
+  var GenerateAbsoluteObservable = (function (__super__) {
+    inherits(GenerateAbsoluteObservable, __super__);
+    function GenerateAbsoluteObservable(state, cndFn, itrFn, resFn, timeFn, s) {
+      this._state = state;
+      this._cndFn = cndFn;
+      this._itrFn = itrFn;
+      this._resFn = resFn;
+      this._timeFn = timeFn;
+      this._s = s;
+      this._first = true;
+      this._hasResult = false;
+      __super__.call(this);
+    }
+
+    function scheduleRecursive(self, recurse) {
+      self._hasResult && self._o.onNext(self._state);
+
+      if (self._first) {
+        self._first = false;
+      } else {
+        self._state = tryCatch(self._itrFn)(self._state);
+        if (self._state === errorObj) { return self._o.onError(self._state.e); }
+      }
+      self._hasResult = tryCatch(self._cndFn)(self._state);
+      if (self._hasResult === errorObj) { return self._o.onError(self._hasResult.e); }
+      if (self._hasResult) {
+        var result = tryCatch(self._resFn)(self._state);
+        if (result === errorObj) { return self._o.onError(result.e); }
+        var time = tryCatch(self._timeFn)(self._state);
+        if (time === errorObj) { return self._o.onError(time.e); }
+        recurse(self, time);
+      } else {
+        self._o.onCompleted();
+      }
+    }
+
+    GenerateAbsoluteObservable.prototype.subscribeCore = function (o) {
+      this._o = o;
+      return this._s.scheduleRecursiveFuture(this, new Date(this._s.now()), scheduleRecursive);
+    };
+
+    return GenerateAbsoluteObservable;
+  }(ObservableBase));
+
   /**
-   *  Generates an observable sequence by iterating a state from an initial state until the condition fails.
+   *  GenerateAbsolutes an observable sequence by iterating a state from an initial state until the condition fails.
    *
    * @example
    *  res = source.generateWithAbsoluteTime(0,
@@ -280,36 +362,53 @@
    * @returns {Observable} The generated sequence.
    */
   Observable.generateWithAbsoluteTime = function (initialState, condition, iterate, resultSelector, timeSelector, scheduler) {
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
-    return new AnonymousObservable(function (observer) {
-      var first = true,
-        hasResult = false;
-      return scheduler.scheduleRecursiveWithAbsoluteAndState(initialState, scheduler.now(), function (state, self) {
-        hasResult && observer.onNext(state);
-
-        try {
-          if (first) {
-            first = false;
-          } else {
-            state = iterate(state);
-          }
-          hasResult = condition(state);
-          if (hasResult) {
-            var result = resultSelector(state);
-            var time = timeSelector(state);
-          }
-        } catch (e) {
-          observer.onError(e);
-          return;
-        }
-        if (hasResult) {
-          self(result, time);
-        } else {
-          observer.onCompleted();
-        }
-      });
-    });
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
+    return new GenerateAbsoluteObservable(initialState, condition, iterate, resultSelector, timeSelector, scheduler);
   };
+
+  var GenerateRelativeObservable = (function (__super__) {
+    inherits(GenerateRelativeObservable, __super__);
+    function GenerateRelativeObservable(state, cndFn, itrFn, resFn, timeFn, s) {
+      this._state = state;
+      this._cndFn = cndFn;
+      this._itrFn = itrFn;
+      this._resFn = resFn;
+      this._timeFn = timeFn;
+      this._s = s;
+      this._first = true;
+      this._hasResult = false;
+      __super__.call(this);
+    }
+
+    function scheduleRecursive(self, recurse) {
+      self._hasResult && self._o.onNext(self._state);
+
+      if (self._first) {
+        self._first = false;
+      } else {
+        self._state = tryCatch(self._itrFn)(self._state);
+        if (self._state === errorObj) { return self._o.onError(self._state.e); }
+      }
+      self._hasResult = tryCatch(self._cndFn)(self._state);
+      if (self._hasResult === errorObj) { return self._o.onError(self._hasResult.e); }
+      if (self._hasResult) {
+        var result = tryCatch(self._resFn)(self._state);
+        if (result === errorObj) { return self._o.onError(result.e); }
+        var time = tryCatch(self._timeFn)(self._state);
+        if (time === errorObj) { return self._o.onError(time.e); }
+        recurse(self, time);
+      } else {
+        self._o.onCompleted();
+      }
+    }
+
+    GenerateRelativeObservable.prototype.subscribeCore = function (o) {
+      this._o = o;
+      return this._s.scheduleRecursiveFuture(this, 0, scheduleRecursive);
+    };
+
+    return GenerateRelativeObservable;
+  }(ObservableBase));
 
   /**
    *  Generates an observable sequence by iterating a state from an initial state until the condition fails.
@@ -331,36 +430,34 @@
    * @returns {Observable} The generated sequence.
    */
   Observable.generateWithRelativeTime = function (initialState, condition, iterate, resultSelector, timeSelector, scheduler) {
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
-    return new AnonymousObservable(function (observer) {
-      var first = true,
-        hasResult = false;
-      return scheduler.scheduleRecursiveWithRelativeAndState(initialState, 0, function (state, self) {
-        hasResult && observer.onNext(state);
-
-        try {
-          if (first) {
-            first = false;
-          } else {
-            state = iterate(state);
-          }
-          hasResult = condition(state);
-          if (hasResult) {
-            var result = resultSelector(state);
-            var time = timeSelector(state);
-          }
-        } catch (e) {
-          observer.onError(e);
-          return;
-        }
-        if (hasResult) {
-          self(result, time);
-        } else {
-          observer.onCompleted();
-        }
-      });
-    });
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
+    return new GenerateRelativeObservable(initialState, condition, iterate, resultSelector, timeSelector, scheduler);
   };
+
+  var DelaySubscription = (function(__super__) {
+    inherits(DelaySubscription, __super__);
+    function DelaySubscription(source, dt, s) {
+      this.source = source;
+      this._dt = dt;
+      this._s = s;
+      __super__.call(this);
+    }
+
+    DelaySubscription.prototype.subscribeCore = function (o) {
+      var d = new SerialDisposable();
+
+      d.setDisposable(this._s.scheduleFuture([this.source, o, d], this._dt, scheduleMethod));
+
+      return d;
+    };
+
+    function scheduleMethod(s, state) {
+      var source = state[0], o = state[1], d = state[2];
+      d.setDisposable(source.subscribe(o));
+    }
+
+    return DelaySubscription;
+  }(ObservableBase));
 
   /**
    *  Time shifts the observable sequence by delaying the subscription with the specified relative time duration, using the specified scheduler to run timers.
@@ -374,214 +471,58 @@
    * @returns {Observable} Time-shifted sequence.
    */
   observableProto.delaySubscription = function (dueTime, scheduler) {
-    var scheduleMethod = dueTime instanceof Date ? 'scheduleWithAbsolute' : 'scheduleWithRelative';
-    var source = this;
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
-    return new AnonymousObservable(function (o) {
-      var d = new SerialDisposable();
-
-      d.setDisposable(scheduler[scheduleMethod](dueTime, function() {
-        d.setDisposable(source.subscribe(o));
-      }));
-
-      return d;
-    }, this);
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
+    return new DelaySubscription(this, dueTime, scheduler);
   };
 
-  /**
-   *  Time shifts the observable sequence based on a subscription delay and a delay selector function for each element.
-   *
-   * @example
-   *  1 - res = source.delayWithSelector(function (x) { return Rx.Scheduler.timer(5000); }); // with selector only
-   *  1 - res = source.delayWithSelector(Rx.Observable.timer(2000), function (x) { return Rx.Observable.timer(x); }); // with delay and selector
-   *
-   * @param {Observable} [subscriptionDelay]  Sequence indicating the delay for the subscription to the source.
-   * @param {Function} delayDurationSelector Selector function to retrieve a sequence indicating the delay for each given element.
-   * @returns {Observable} Time-shifted sequence.
-   */
-  observableProto.delayWithSelector = function (subscriptionDelay, delayDurationSelector) {
-    var source = this, subDelay, selector;
-    if (isFunction(subscriptionDelay)) {
-      selector = subscriptionDelay;
-    } else {
-      subDelay = subscriptionDelay;
-      selector = delayDurationSelector;
+  var SkipLastWithTimeObservable = (function (__super__) {
+    inherits(SkipLastWithTimeObservable, __super__);
+    function SkipLastWithTimeObservable(source, d, s) {
+      this.source = source;
+      this._d = d;
+      this._s = s;
+      __super__.call(this);
     }
-    return new AnonymousObservable(function (observer) {
-      var delays = new CompositeDisposable(), atEnd = false, subscription = new SerialDisposable();
 
-      function start() {
-        subscription.setDisposable(source.subscribe(
-          function (x) {
-            var delay = tryCatch(selector)(x);
-            if (delay === errorObj) { return observer.onError(delay.e); }
-            var d = new SingleAssignmentDisposable();
-            delays.add(d);
-            d.setDisposable(delay.subscribe(
-              function () {
-                observer.onNext(x);
-                delays.remove(d);
-                done();
-              },
-              function (e) { observer.onError(e); },
-              function () {
-                observer.onNext(x);
-                delays.remove(d);
-                done();
-              }
-            ))
-          },
-          function (e) { observer.onError(e); },
-          function () {
-            atEnd = true;
-            subscription.dispose();
-            done();
-          }
-        ))
-      }
-
-      function done () {
-        atEnd && delays.length === 0 && observer.onCompleted();
-      }
-
-      if (!subDelay) {
-        start();
-      } else {
-        subscription.setDisposable(subDelay.subscribe(start, function (e) { observer.onError(e); }, start));
-      }
-
-      return new CompositeDisposable(subscription, delays);
-    }, this);
-  };
-
-    /**
-     *  Returns the source observable sequence, switching to the other observable sequence if a timeout is signaled.
-     * @param {Observable} [firstTimeout]  Observable sequence that represents the timeout for the first element. If not provided, this defaults to Observable.never().
-     * @param {Function} timeoutDurationSelector Selector to retrieve an observable sequence that represents the timeout between the current element and the next element.
-     * @param {Observable} [other]  Sequence to return in case of a timeout. If not provided, this is set to Observable.throwException().
-     * @returns {Observable} The source sequence switching to the other sequence in case of a timeout.
-     */
-    observableProto.timeoutWithSelector = function (firstTimeout, timeoutdurationSelector, other) {
-      if (arguments.length === 1) {
-          timeoutdurationSelector = firstTimeout;
-          firstTimeout = observableNever();
-      }
-      other || (other = observableThrow(new Error('Timeout')));
-      var source = this;
-      return new AnonymousObservable(function (observer) {
-        var subscription = new SerialDisposable(), timer = new SerialDisposable(), original = new SingleAssignmentDisposable();
-
-        subscription.setDisposable(original);
-
-        var id = 0, switched = false;
-
-        function setTimer(timeout) {
-          var myId = id;
-
-          function timerWins () {
-            return id === myId;
-          }
-
-          var d = new SingleAssignmentDisposable();
-          timer.setDisposable(d);
-          d.setDisposable(timeout.subscribe(function () {
-            timerWins() && subscription.setDisposable(other.subscribe(observer));
-            d.dispose();
-          }, function (e) {
-            timerWins() && observer.onError(e);
-          }, function () {
-            timerWins() && subscription.setDisposable(other.subscribe(observer));
-          }));
-        };
-
-        setTimer(firstTimeout);
-
-        function observerWins() {
-          var res = !switched;
-          if (res) { id++; }
-          return res;
-        }
-
-        original.setDisposable(source.subscribe(function (x) {
-          if (observerWins()) {
-            observer.onNext(x);
-            var timeout;
-            try {
-              timeout = timeoutdurationSelector(x);
-            } catch (e) {
-              observer.onError(e);
-              return;
-            }
-            setTimer(isPromise(timeout) ? observableFromPromise(timeout) : timeout);
-          }
-        }, function (e) {
-          observerWins() && observer.onError(e);
-        }, function () {
-          observerWins() && observer.onCompleted();
-        }));
-        return new CompositeDisposable(subscription, timer);
-      }, source);
+    SkipLastWithTimeObservable.prototype.subscribeCore = function (o) {
+      return this.source.subscribe(new SkipLastWithTimeObserver(o, this));
     };
 
-  /**
-   * Ignores values from an observable sequence which are followed by another value within a computed throttle duration.
-   * @param {Function} durationSelector Selector function to retrieve a sequence indicating the throttle duration for each given element.
-   * @returns {Observable} The debounced sequence.
-   */
-  observableProto.debounceWithSelector = function (durationSelector) {
-    var source = this;
-    return new AnonymousObservable(function (o) {
-      var value, hasValue = false, cancelable = new SerialDisposable(), id = 0;
-      var subscription = source.subscribe(
-        function (x) {
-          var throttle = tryCatch(durationSelector)(x);
-          if (throttle === errorObj) { return o.onError(throttle.e); }
+    return SkipLastWithTimeObservable;
+  }(ObservableBase));
 
-          isPromise(throttle) && (throttle = observableFromPromise(throttle));
+  var SkipLastWithTimeObserver = (function (__super__) {
+    inherits(SkipLastWithTimeObserver, __super__);
 
-          hasValue = true;
-          value = x;
-          id++;
-          var currentid = id, d = new SingleAssignmentDisposable();
-          cancelable.setDisposable(d);
-          d.setDisposable(throttle.subscribe(
-            function () {
-              hasValue && id === currentid && o.onNext(value);
-              hasValue = false;
-              d.dispose();
-            },
-            function (e) { o.onError(e); },
-            function () {
-              hasValue && id === currentid && o.onNext(value);
-              hasValue = false;
-              d.dispose();
-            }
-          ));
-        },
-        function (e) {
-          cancelable.dispose();
-          o.onError(e);
-          hasValue = false;
-          id++;
-        },
-        function () {
-          cancelable.dispose();
-          hasValue && o.onNext(value);
-          o.onCompleted();
-          hasValue = false;
-          id++;
-        }
-      );
-      return new CompositeDisposable(subscription, cancelable);
-    }, source);
-  };
+    function SkipLastWithTimeObserver(o, p) {
+      this._o = o;
+      this._s = p._s;
+      this._d = p._d;
+      this._q = [];
+      __super__.call(this);
+    }
+
+    SkipLastWithTimeObserver.prototype.next = function (x) {
+      var now = this._s.now();
+      this._q.push({ interval: now, value: x });
+      while (this._q.length > 0 && now - this._q[0].interval >= this._d) {
+        this._o.onNext(this._q.shift().value);
+      }
+    };
+    SkipLastWithTimeObserver.prototype.error = function (e) { this._o.onError(e); };
+    SkipLastWithTimeObserver.prototype.completed = function () {
+      var now = this._s.now();
+      while (this._q.length > 0 && now - this._q[0].interval >= this._d) {
+        this._o.onNext(this._q.shift().value);
+      }
+      this._o.onCompleted();
+    };
+
+    return SkipLastWithTimeObserver;
+  }(AbstractObserver));
 
   /**
    *  Skips elements for the specified duration from the end of the observable source sequence, using the specified scheduler to run timers.
-   *
-   *  1 - res = source.skipLastWithTime(5000);
-   *  2 - res = source.skipLastWithTime(5000, scheduler);
-   *
    * @description
    *  This operator accumulates a queue with a length enough to store elements received during the initial duration window.
    *  As more elements are received, elements older than the specified duration are taken from the queue and produced on the
@@ -591,25 +532,56 @@
    * @returns {Observable} An observable sequence with the elements skipped during the specified duration from the end of the source sequence.
    */
   observableProto.skipLastWithTime = function (duration, scheduler) {
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
-    var source = this;
-    return new AnonymousObservable(function (o) {
-      var q = [];
-      return source.subscribe(function (x) {
-        var now = scheduler.now();
-        q.push({ interval: now, value: x });
-        while (q.length > 0 && now - q[0].interval >= duration) {
-          o.onNext(q.shift().value);
-        }
-      }, function (e) { o.onError(e); }, function () {
-        var now = scheduler.now();
-        while (q.length > 0 && now - q[0].interval >= duration) {
-          o.onNext(q.shift().value);
-        }
-        o.onCompleted();
-      });
-    }, source);
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
+    return new SkipLastWithTimeObservable(this, duration, scheduler);
   };
+
+  var TakeLastWithTimeObservable = (function (__super__) {
+    inherits(TakeLastWithTimeObservable, __super__);
+    function TakeLastWithTimeObservable(source, d, s) {
+      this.source = source;
+      this._d = d;
+      this._s = s;
+      __super__.call(this);
+    }
+
+    TakeLastWithTimeObservable.prototype.subscribeCore = function (o) {
+      return this.source.subscribe(new TakeLastWithTimeObserver(o, this._d, this._s));
+    };
+
+    return TakeLastWithTimeObservable;
+  }(ObservableBase));
+
+  var TakeLastWithTimeObserver = (function (__super__) {
+    inherits(TakeLastWithTimeObserver, __super__);
+
+    function TakeLastWithTimeObserver(o, d, s) {
+      this._o = o;
+      this._d = d;
+      this._s = s;
+      this._q = [];
+      __super__.call(this);
+    }
+
+    TakeLastWithTimeObserver.prototype.next = function (x) {
+      var now = this._s.now();
+      this._q.push({ interval: now, value: x });
+      while (this._q.length > 0 && now - this._q[0].interval >= this._d) {
+        this._q.shift();
+      }
+    };
+    TakeLastWithTimeObserver.prototype.error = function (e) { this._o.onError(e); };
+    TakeLastWithTimeObserver.prototype.completed = function () {
+      var now = this._s.now();
+      while (this._q.length > 0) {
+        var next = this._q.shift();
+        if (now - next.interval <= this._d) { this._o.onNext(next.value); }
+      }
+      this._o.onCompleted();
+    };
+
+    return TakeLastWithTimeObserver;
+  }(AbstractObserver));
 
   /**
    *  Returns elements within the specified duration from the end of the observable source sequence, using the specified schedulers to run timers and to drain the collected elements.
@@ -622,25 +594,8 @@
    * @returns {Observable} An observable sequence with the elements taken during the specified duration from the end of the source sequence.
    */
   observableProto.takeLastWithTime = function (duration, scheduler) {
-    var source = this;
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
-    return new AnonymousObservable(function (o) {
-      var q = [];
-      return source.subscribe(function (x) {
-        var now = scheduler.now();
-        q.push({ interval: now, value: x });
-        while (q.length > 0 && now - q[0].interval >= duration) {
-          q.shift();
-        }
-      }, function (e) { o.onError(e); }, function () {
-        var now = scheduler.now();
-        while (q.length > 0) {
-          var next = q.shift();
-          if (now - next.interval <= duration) { o.onNext(next.value); }
-        }
-        o.onCompleted();
-      });
-    }, source);
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
+    return new TakeLastWithTimeObservable(this, duration, scheduler);
   };
 
   /**
@@ -655,7 +610,7 @@
    */
   observableProto.takeLastBufferWithTime = function (duration, scheduler) {
     var source = this;
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
     return new AnonymousObservable(function (o) {
       var q = [];
       return source.subscribe(function (x) {
@@ -676,6 +631,29 @@
     }, source);
   };
 
+  var TakeWithTimeObservable = (function (__super__) {
+    inherits(TakeWithTimeObservable, __super__);
+    function TakeWithTimeObservable(source, d, s) {
+      this.source = source;
+      this._d = d;
+      this._s = s;
+      __super__.call(this);
+    }
+
+    function scheduleMethod(s, o) {
+      o.onCompleted();
+    }
+
+    TakeWithTimeObservable.prototype.subscribeCore = function (o) {
+      return new BinaryDisposable(
+        this._s.scheduleFuture(o, this._d, scheduleMethod),
+        this.source.subscribe(o)
+      );
+    };
+
+    return TakeWithTimeObservable;
+  }(ObservableBase));
+
   /**
    *  Takes elements for the specified duration from the start of the observable source sequence, using the specified scheduler to run timers.
    *
@@ -690,19 +668,52 @@
    * @returns {Observable} An observable sequence with the elements taken during the specified duration from the start of the source sequence.
    */
   observableProto.takeWithTime = function (duration, scheduler) {
-    var source = this;
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
-    return new AnonymousObservable(function (o) {
-      return new CompositeDisposable(scheduler.scheduleWithRelative(duration, function () { o.onCompleted(); }), source.subscribe(o));
-    }, source);
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
+    return new TakeWithTimeObservable(this, duration, scheduler);
   };
+
+  var SkipWithTimeObservable = (function (__super__) {
+    inherits(SkipWithTimeObservable, __super__);
+    function SkipWithTimeObservable(source, d, s) {
+      this.source = source;
+      this._d = d;
+      this._s = s;
+      this._open = false;
+      __super__.call(this);
+    }
+
+    function scheduleMethod(s, self) {
+      self._open = true;
+    }
+
+    SkipWithTimeObservable.prototype.subscribeCore = function (o) {
+      return new BinaryDisposable(
+        this._s.scheduleFuture(this, this._d, scheduleMethod),
+        this.source.subscribe(new SkipWithTimeObserver(o, this))
+      );
+    };
+
+    return SkipWithTimeObservable;
+  }(ObservableBase));
+
+  var SkipWithTimeObserver = (function (__super__) {
+    inherits(SkipWithTimeObserver, __super__);
+
+    function SkipWithTimeObserver(o, p) {
+      this._o = o;
+      this._p = p;
+      __super__.call(this);
+    }
+
+    SkipWithTimeObserver.prototype.next = function (x) { this._p._open && this._o.onNext(x); };
+    SkipWithTimeObserver.prototype.error = function (e) { this._o.onError(e); };
+    SkipWithTimeObserver.prototype.completed = function () { this._o.onCompleted(); };
+
+    return SkipWithTimeObserver;
+  }(AbstractObserver));
 
   /**
    *  Skips elements for the specified duration from the start of the observable source sequence, using the specified scheduler to run timers.
-   *
-   * @example
-   *  1 - res = source.skipWithTime(5000, [optional scheduler]);
-   *
    * @description
    *  Specifying a zero value for duration doesn't guarantee no elements will be dropped from the start of the source sequence.
    *  This is a side-effect of the asynchrony introduced by the scheduler, where the action that causes callbacks from the source sequence to be forwarded
@@ -714,15 +725,50 @@
    * @returns {Observable} An observable sequence with the elements skipped during the specified duration from the start of the source sequence.
    */
   observableProto.skipWithTime = function (duration, scheduler) {
-    var source = this;
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
-    return new AnonymousObservable(function (observer) {
-      var open = false;
-      return new CompositeDisposable(
-        scheduler.scheduleWithRelative(duration, function () { open = true; }),
-        source.subscribe(function (x) { open && observer.onNext(x); }, observer.onError.bind(observer), observer.onCompleted.bind(observer)));
-    }, source);
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
+    return new SkipWithTimeObservable(this, duration, scheduler);
   };
+
+  var SkipUntilWithTimeObservable = (function (__super__) {
+    inherits(SkipUntilWithTimeObservable, __super__);
+    function SkipUntilWithTimeObservable(source, startTime, scheduler) {
+      this.source = source;
+      this._st = startTime;
+      this._s = scheduler;
+      __super__.call(this);
+    }
+
+    function scheduleMethod(s, state) {
+      state._open = true;
+    }
+
+    SkipUntilWithTimeObservable.prototype.subscribeCore = function (o) {
+      this._open = false;
+      return new BinaryDisposable(
+        this._s.scheduleFuture(this, this._st, scheduleMethod),
+        this.source.subscribe(new SkipUntilWithTimeObserver(o, this))
+      );
+    };
+
+    return SkipUntilWithTimeObservable;
+  }(ObservableBase));
+
+  var SkipUntilWithTimeObserver = (function (__super__) {
+    inherits(SkipUntilWithTimeObserver, __super__);
+
+    function SkipUntilWithTimeObserver(o, p) {
+      this._o = o;
+      this._p = p;
+      __super__.call(this);
+    }
+
+    SkipUntilWithTimeObserver.prototype.next = function (x) { this._p._open && this._o.onNext(x); };
+    SkipUntilWithTimeObserver.prototype.error = function (e) { this._o.onError(e); };
+    SkipUntilWithTimeObserver.prototype.completed = function () { this._o.onCompleted(); };
+
+    return SkipUntilWithTimeObserver;
+  }(AbstractObserver));
+
 
   /**
    *  Skips elements from the observable source sequence until the specified start time, using the specified scheduler to run timers.
@@ -736,19 +782,8 @@
    * @returns {Observable} An observable sequence with the elements skipped until the specified start time.
    */
   observableProto.skipUntilWithTime = function (startTime, scheduler) {
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
-    var source = this, schedulerMethod = startTime instanceof Date ?
-      'scheduleWithAbsolute' :
-      'scheduleWithRelative';
-    return new AnonymousObservable(function (o) {
-      var open = false;
-
-      return new CompositeDisposable(
-        scheduler[schedulerMethod](startTime, function () { open = true; }),
-        source.subscribe(
-          function (x) { open && o.onNext(x); },
-          function (e) { o.onError(e); }, function () { o.onCompleted(); }));
-    }, source);
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
+    return new SkipUntilWithTimeObservable(this, startTime, scheduler);
   };
 
   /**
@@ -758,13 +793,11 @@
    * @returns {Observable} An observable sequence with the elements taken until the specified end time.
    */
   observableProto.takeUntilWithTime = function (endTime, scheduler) {
-    isScheduler(scheduler) || (scheduler = timeoutScheduler);
-    var source = this, schedulerMethod = endTime instanceof Date ?
-      'scheduleWithAbsolute' :
-      'scheduleWithRelative';
+    isScheduler(scheduler) || (scheduler = defaultScheduler);
+    var source = this;
     return new AnonymousObservable(function (o) {
-      return new CompositeDisposable(
-        scheduler[schedulerMethod](endTime, function () { o.onCompleted(); }),
+      return new BinaryDisposable(
+        scheduler.scheduleFuture(o, endTime, function (_, o) { o.onCompleted(); }),
         source.subscribe(o));
     }, source);
   };

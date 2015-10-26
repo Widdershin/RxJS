@@ -1,123 +1,121 @@
-QUnit.module('Find');
+(function () {
+  /* jshint undef: true, unused: true */
+  /* globals QUnit, test, Rx */
 
-var TestScheduler = Rx.TestScheduler,
-    onNext = Rx.ReactiveTest.onNext,
-    onError = Rx.ReactiveTest.onError,
-    onCompleted = Rx.ReactiveTest.onCompleted,
-    subscribe = Rx.ReactiveTest.subscribe;
+  QUnit.module('find');
 
-test('find_Never', function () {
+  var TestScheduler = Rx.TestScheduler,
+      onNext = Rx.ReactiveTest.onNext,
+      onError = Rx.ReactiveTest.onError,
+      onCompleted = Rx.ReactiveTest.onCompleted,
+      subscribe = Rx.ReactiveTest.subscribe;
+
+  test('find never', function () {
     var scheduler = new TestScheduler();
+
     var xs = scheduler.createHotObservable(
         onNext(150, 1)
     );
 
-    var res = scheduler.startWithCreate(function () {
-        return xs.find(function () {
-            return true;
-        });
+    var results = scheduler.startScheduler(function () {
+      return xs.find(function () { return true; });
     });
 
-    res.messages.assertEqual(
+    results.messages.assertEqual();
+  });
 
-    );
-});
-
-test('find_Empty', function () {
+  test('find empty', function () {
     var scheduler = new TestScheduler();
+
     var xs = scheduler.createHotObservable(
-        onNext(150, 1),
-        onCompleted(210)
+      onNext(150, 1),
+      onCompleted(210)
     );
 
-    var res = scheduler.startWithCreate(function () {
-        return xs.find(function () {
-            return true;
-        });
+    var results = scheduler.startScheduler(function () {
+      return xs.find(function () { return true; });
     });
 
-    res.messages.assertEqual(
-        onNext(210, undefined),
-        onCompleted(210)
+    results.messages.assertEqual(
+      onCompleted(210)
     );
-});
+  });
 
-test('find_Single', function () {
+  test('find single', function () {
     var scheduler = new TestScheduler();
+
     var xs = scheduler.createHotObservable(
-        onNext(150, 1),
-        onNext(210, 2),
-        onCompleted(220)
+      onNext(150, 1),
+      onNext(210, 2),
+      onCompleted(220)
     );
 
-    var res = scheduler.startWithCreate(function () {
-        return xs.find(function (x) {
-            return x === 2;
-        });
+    var results = scheduler.startScheduler(function () {
+      return xs.find(function (x) { return x === 2; });
     });
 
-    res.messages.assertEqual(
-        onNext(210, 2),
-        onCompleted(210)
+    results.messages.assertEqual(
+      onNext(210, 2),
+      onCompleted(210)
     );
-});
+  });
 
-test('find_NotFound', function () {
+  test('find not found', function () {
     var scheduler = new TestScheduler();
+
     var xs = scheduler.createHotObservable(
-        onNext(150, 1),
-        onNext(210, 2),
-        onCompleted(220)
+      onNext(150, 1),
+      onNext(210, 2),
+      onCompleted(220)
     );
 
-    var res = scheduler.startWithCreate(function () {
-        return xs.find(function (x) {
-            return x === 3;
-        });
+    var results = scheduler.startScheduler(function () {
+      return xs.find(function (x) { return x === 3; });
     });
 
-    res.messages.assertEqual(
-        onNext(220, undefined),
-        onCompleted(220)
+    results.messages.assertEqual(
+      onCompleted(220)
     );
-});
+  });
 
-test('find_Error', function () {
-    var ex = new Error('error');
+  test('find error', function () {
+    var error = new Error();
+
     var scheduler = new TestScheduler();
+
     var xs = scheduler.createHotObservable(
-        onNext(150, 1),
-        onNext(210, 2),
-        onError(220, ex)
+      onNext(150, 1),
+      onNext(210, 2),
+      onError(220, error)
     );
 
-    var res = scheduler.startWithCreate(function () {
-        return xs.find(function (x) {
-            return x === 3;
-        });
+    var results = scheduler.startScheduler(function () {
+      return xs.find(function (x) { return x === 3; });
     });
 
-    res.messages.assertEqual(
-        onError(220, ex)
+    results.messages.assertEqual(
+      onError(220, error)
     );
-});
+  });
 
-test('find_Throws', function () {
-    var ex = new Error('error');
+  test('find throws', function () {
+    var error = new Error();
+
     var scheduler = new TestScheduler();
+
     var xs = scheduler.createHotObservable(
-        onNext(150, 1),
-        onNext(210, 2),
-        onCompleted(220)
+      onNext(150, 1),
+      onNext(210, 2),
+      onCompleted(220)
     );
 
-    var res = scheduler.startWithCreate(function () {
-        return xs.find(function (x) {
-            throw ex;
-        });
+    var results = scheduler.startScheduler(function () {
+      return xs.find(function () { throw error; });
     });
 
-    res.messages.assertEqual(
-        onError(210, ex)
+    results.messages.assertEqual(
+      onError(210, error)
     );
-});
+  });
+
+}());

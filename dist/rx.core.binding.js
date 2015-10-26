@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Open Technologies, Inc. All rights reserved. See License.txt in the project root for license information.
+// Copyright (c) Microsoft, All rights reserved. See License.txt in the project root for license information.
 
 ;(function (factory) {
   var objectTypes = {
@@ -6,15 +6,18 @@
     'object': true
   };
 
-  var
-    freeExports = objectTypes[typeof exports] && exports && !exports.nodeType && exports,
-    freeSelf = objectTypes[typeof self] && self.Object && self,
-    freeWindow = objectTypes[typeof window] && window && window.Object && window,
-    freeModule = objectTypes[typeof module] && module && !module.nodeType && module,
-    moduleExports = freeModule && freeModule.exports === freeExports && freeExports,
-    freeGlobal = freeExports && freeModule && typeof global == 'object' && global && global.Object && global;
+  function checkGlobal(value) {
+    return (value && value.Object === Object) ? value : null;
+  }
 
-  var root = root = freeGlobal || ((freeWindow !== (this && this.window)) && freeWindow) || freeSelf || this;
+  var freeExports = (objectTypes[typeof exports] && exports && !exports.nodeType) ? exports : null;
+  var freeModule = (objectTypes[typeof module] && module && !module.nodeType) ? module : null;
+  var freeGlobal = checkGlobal(freeExports && freeModule && typeof global === 'object' && global);
+  var freeSelf = checkGlobal(objectTypes[typeof self] && self);
+  var freeWindow = checkGlobal(objectTypes[typeof window] && window);
+  var moduleExports = (freeModule && freeModule.exports === freeExports) ? freeExports : null;
+  var thisGlobal = checkGlobal(objectTypes[typeof this] && this);
+  var root = freeGlobal || ((freeWindow !== (thisGlobal && thisGlobal.window)) && freeWindow) || freeSelf || thisGlobal || Function('return this')();
 
     // Because of build optimizers
     if (typeof define === 'function' && define.amd) {
@@ -31,11 +34,13 @@
   var Observable = Rx.Observable,
     observableProto = Observable.prototype,
     AnonymousObservable = Rx.AnonymousObservable,
+    ObservableBase = Rx.ObservableBase,
     Observer = Rx.Observer,
     AbstractObserver = Rx.internals.AbstractObserver,
     disposableCreate = Rx.Disposable.create,
     disposableEmpty = Rx.Disposable.empty,
     CompositeDisposable = Rx.CompositeDisposable,
+    BinaryDisposable = Rx.BinaryDisposable,
     SerialDisposable = Rx.SerialDisposable,
     currentThreadScheduler = Rx.Scheduler.currentThread,
     isFunction = Rx.helpers.isFunction,
@@ -51,23 +56,43 @@
   }
 
   var errorObj = {e: {}};
-  var tryCatchTarget;
-  function tryCatcher() {
-    try {
-      return tryCatchTarget.apply(this, arguments);
-    } catch (e) {
-      errorObj.e = e;
-      return errorObj;
-    }
+  
+  function tryCatcherGen(tryCatchTarget) {
+    return function tryCatcher() {
+      try {
+        return tryCatchTarget.apply(this, arguments);
+      } catch (e) {
+        errorObj.e = e;
+        return errorObj;
+      }
+    };
   }
-  function tryCatch(fn) {
+
+  var tryCatch = Rx.internals.tryCatch = function tryCatch(fn) {
     if (!isFunction(fn)) { throw new TypeError('fn must be a function'); }
-    tryCatchTarget = fn;
-    return tryCatcher;
-  }
+    return tryCatcherGen(fn);
+  };
+
   function thrower(e) {
     throw e;
   }
+
+  var MulticastObservable = (function (__super__) {
+    inherits(MulticastObservable, __super__);
+    function MulticastObservable(source, fn1, fn2) {
+      this.source = source;
+      this._fn1 = fn1;
+      this._fn2 = fn2;
+      __super__.call(this);
+    }
+
+    MulticastObservable.prototype.subscribeCore = function (o) {
+      var connectable = this.source.multicast(this._fn1());
+      return new BinaryDisposable(this._fn2(connectable).subscribe(o), connectable.connect());
+    };
+
+    return MulticastObservable;
+  }(ObservableBase));
 
   /**
    * Multicasts the source sequence notifications through an instantiated subject into all uses of the sequence within a selector function. Each
@@ -87,13 +112,9 @@
    * @returns {Observable} An observable sequence that contains the elements of a sequence produced by multicasting the source sequence within a selector function.
    */
   observableProto.multicast = function (subjectOrSubjectSelector, selector) {
-    var source = this;
-    return typeof subjectOrSubjectSelector === 'function' ?
-      new AnonymousObservable(function (observer) {
-        var connectable = source.multicast(subjectOrSubjectSelector());
-        return new CompositeDisposable(selector(connectable).subscribe(observer), connectable.connect());
-      }, source) :
-      new ConnectableObservable(source, subjectOrSubjectSelector);
+    return isFunction(subjectOrSubjectSelector) ?
+      new MulticastObservable(this, subjectOrSubjectSelector, selector) :
+      new ConnectableObservable(this, subjectOrSubjectSelector);
   };
 
   /**
@@ -245,7 +266,7 @@
         this.isAcquired = true;
       }
       if (isOwner) {
-        this.disposable.setDisposable(this.scheduler.scheduleRecursiveWithState(this, function (parent, self) {
+        this.disposable.setDisposable(this.scheduler.scheduleRecursive(this, function (parent, self) {
           var work;
           if (parent.queue.length > 0) {
             work = parent.queue.shift();
@@ -272,16 +293,16 @@
     return ScheduledObserver;
   }(AbstractObserver));
 
-  var InnerSubscription = function (subject, observer) {
-    this.subject = subject;
-    this.observer = observer;
+  var InnerSubscription = function (s, o) {
+    this._s = s;
+    this._o = o;
   };
 
   InnerSubscription.prototype.dispose = function () {
-    if (!this.subject.isDisposed && this.observer !== null) {
-      var idx = this.subject.observers.indexOf(this.observer);
-      this.subject.observers.splice(idx, 1);
-      this.observer = null;
+    if (!this._s.isDisposed && this._o !== null) {
+      var idx = this._s.observers.indexOf(this._o);
+      this._s.observers.splice(idx, 1);
+      this._o = null;
     }
   };
 
@@ -290,34 +311,29 @@
    *  Each notification is broadcasted to all subscribed observers.
    */
   var Subject = Rx.Subject = (function (__super__) {
-    function subscribe(observer) {
-      checkDisposed(this);
-      if (!this.isStopped) {
-        this.observers.push(observer);
-        return new InnerSubscription(this, observer);
-      }
-      if (this.hasError) {
-        observer.onError(this.error);
-        return disposableEmpty;
-      }
-      observer.onCompleted();
-      return disposableEmpty;
-    }
-
     inherits(Subject, __super__);
-
-    /**
-     * Creates a subject.
-     */
     function Subject() {
-      __super__.call(this, subscribe);
-      this.isDisposed = false,
-      this.isStopped = false,
+      __super__.call(this);
+      this.isDisposed = false;
+      this.isStopped = false;
       this.observers = [];
       this.hasError = false;
     }
 
     addProperties(Subject.prototype, Observer.prototype, {
+      _subscribe: function (o) {
+        checkDisposed(this);
+        if (!this.isStopped) {
+          this.observers.push(o);
+          return new InnerSubscription(this, o);
+        }
+        if (this.hasError) {
+          o.onError(this.error);
+          return disposableEmpty;
+        }
+        o.onCompleted();
+        return disposableEmpty;
+      },
       /**
        * Indicates whether the subject has observers subscribed to it.
        * @returns {Boolean} Indicates whether the subject has observers subscribed to it.
@@ -390,18 +406,16 @@
 
   var AnonymousSubject = Rx.AnonymousSubject = (function (__super__) {
     inherits(AnonymousSubject, __super__);
-
-    function subscribe(observer) {
-      return this.observable.subscribe(observer);
-    }
-
     function AnonymousSubject(observer, observable) {
       this.observer = observer;
       this.observable = observable;
-      __super__.call(this, subscribe);
+      __super__.call(this);
     }
 
     addProperties(AnonymousSubject.prototype, Observer.prototype, {
+      _subscribe: function (o) {
+        return this.observable.subscribe(o);
+      },
       onCompleted: function () {
         this.observer.onCompleted();
       },
@@ -421,27 +435,6 @@
    *  The last value before the OnCompleted notification, or the error received through OnError, is sent to all subscribed observers.
    */
   var AsyncSubject = Rx.AsyncSubject = (function (__super__) {
-
-    function subscribe(observer) {
-      checkDisposed(this);
-
-      if (!this.isStopped) {
-        this.observers.push(observer);
-        return new InnerSubscription(this, observer);
-      }
-
-      if (this.hasError) {
-        observer.onError(this.error);
-      } else if (this.hasValue) {
-        observer.onNext(this.value);
-        observer.onCompleted();
-      } else {
-        observer.onCompleted();
-      }
-
-      return disposableEmpty;
-    }
-
     inherits(AsyncSubject, __super__);
 
     /**
@@ -449,8 +442,7 @@
      * @constructor
      */
     function AsyncSubject() {
-      __super__.call(this, subscribe);
-
+      __super__.call(this);
       this.isDisposed = false;
       this.isStopped = false;
       this.hasValue = false;
@@ -458,7 +450,26 @@
       this.hasError = false;
     }
 
-    addProperties(AsyncSubject.prototype, Observer, {
+    addProperties(AsyncSubject.prototype, Observer.prototype, {
+      _subscribe: function (o) {
+        checkDisposed(this);
+
+        if (!this.isStopped) {
+          this.observers.push(o);
+          return new InnerSubscription(this, o);
+        }
+
+        if (this.hasError) {
+          o.onError(this.error);
+        } else if (this.hasValue) {
+          o.onNext(this.value);
+          o.onCompleted();
+        } else {
+          o.onCompleted();
+        }
+
+        return disposableEmpty;
+      },
       /**
        * Indicates whether the subject has observers subscribed to it.
        * @returns {Boolean} Indicates whether the subject has observers subscribed to it.
@@ -526,7 +537,7 @@
       dispose: function () {
         this.isDisposed = true;
         this.observers = null;
-        this.exception = null;
+        this.error = null;
         this.value = null;
       }
     });
@@ -539,37 +550,31 @@
    *  Observers can subscribe to the subject to receive the last (or initial) value and all subsequent notifications.
    */
   var BehaviorSubject = Rx.BehaviorSubject = (function (__super__) {
-    function subscribe(observer) {
-      checkDisposed(this);
-      if (!this.isStopped) {
-        this.observers.push(observer);
-        observer.onNext(this.value);
-        return new InnerSubscription(this, observer);
-      }
-      if (this.hasError) {
-        observer.onError(this.error);
-      } else {
-        observer.onCompleted();
-      }
-      return disposableEmpty;
-    }
-
     inherits(BehaviorSubject, __super__);
-
-    /**
-     *  Initializes a new instance of the BehaviorSubject class which creates a subject that caches its last value and starts with the specified value.
-     *  @param {Mixed} value Initial value sent to observers when no other value has been received by the subject yet.
-     */
     function BehaviorSubject(value) {
-      __super__.call(this, subscribe);
-      this.value = value,
-      this.observers = [],
-      this.isDisposed = false,
-      this.isStopped = false,
+      __super__.call(this);
+      this.value = value;
+      this.observers = [];
+      this.isDisposed = false;
+      this.isStopped = false;
       this.hasError = false;
     }
 
-    addProperties(BehaviorSubject.prototype, Observer, {
+    addProperties(BehaviorSubject.prototype, Observer.prototype, {
+      _subscribe: function (o) {
+        checkDisposed(this);
+        if (!this.isStopped) {
+          this.observers.push(o);
+          o.onNext(this.value);
+          return new InnerSubscription(this, o);
+        }
+        if (this.hasError) {
+          o.onError(this.error);
+        } else {
+          o.onCompleted();
+        }
+        return disposableEmpty;
+      },
       /**
        * Gets the current value or throws an exception.
        * Value is frozen after onCompleted is called.
@@ -578,11 +583,9 @@
        * @returns {Mixed} The initial value passed to the constructor until onNext is called; after which, the last value passed to onNext.
        */
       getValue: function () {
-          checkDisposed(this);
-          if (this.hasError) {
-              throw this.error;
-          }
-          return this.value;
+        checkDisposed(this);
+        if (this.hasError) { thrower(this.error); }
+        return this.value;
       },
       /**
        * Indicates whether the subject has observers subscribed to it.
@@ -638,7 +641,7 @@
         this.isDisposed = true;
         this.observers = null;
         this.value = null;
-        this.exception = null;
+        this.error = null;
       }
     });
 
@@ -660,27 +663,6 @@
       });
     }
 
-    function subscribe(observer) {
-      var so = new ScheduledObserver(this.scheduler, observer),
-        subscription = createRemovableDisposable(this, so);
-      checkDisposed(this);
-      this._trim(this.scheduler.now());
-      this.observers.push(so);
-
-      for (var i = 0, len = this.q.length; i < len; i++) {
-        so.onNext(this.q[i].value);
-      }
-
-      if (this.hasError) {
-        so.onError(this.error);
-      } else if (this.isStopped) {
-        so.onCompleted();
-      }
-
-      so.ensureActive();
-      return subscription;
-    }
-
     inherits(ReplaySubject, __super__);
 
     /**
@@ -699,10 +681,30 @@
       this.isDisposed = false;
       this.hasError = false;
       this.error = null;
-      __super__.call(this, subscribe);
+      __super__.call(this);
     }
 
     addProperties(ReplaySubject.prototype, Observer.prototype, {
+      _subscribe: function (o) {
+        checkDisposed(this);
+        var so = new ScheduledObserver(this.scheduler, o), subscription = createRemovableDisposable(this, so);
+
+        this._trim(this.scheduler.now());
+        this.observers.push(so);
+
+        for (var i = 0, len = this.q.length; i < len; i++) {
+          so.onNext(this.q[i].value);
+        }
+
+        if (this.hasError) {
+          so.onError(this.error);
+        } else if (this.isStopped) {
+          so.onCompleted();
+        }
+
+        so.ensureActive();
+        return subscription;
+      },
       /**
        * Indicates whether the subject has observers subscribed to it.
        * @returns {Boolean} Indicates whether the subject has observers subscribed to it.
@@ -782,38 +784,78 @@
     return ReplaySubject;
   }(Observable));
 
-  var ConnectableObservable = Rx.ConnectableObservable = (function (__super__) {
-    inherits(ConnectableObservable, __super__);
-
-    function ConnectableObservable(source, subject) {
-      var hasSubscription = false,
-        subscription,
-        sourceObservable = source.asObservable();
-
-      this.connect = function () {
-        if (!hasSubscription) {
-          hasSubscription = true;
-          subscription = new CompositeDisposable(sourceObservable.subscribe(subject), disposableCreate(function () {
-            hasSubscription = false;
-          }));
-        }
-        return subscription;
-      };
-
-      __super__.call(this, function (o) { return subject.subscribe(o); });
+  var RefCountObservable = (function (__super__) {
+    inherits(RefCountObservable, __super__);
+    function RefCountObservable(source) {
+      this.source = source;
+      this._count = 0;
+      this._connectableSubscription = null;
+      __super__.call(this);
     }
 
+    RefCountObservable.prototype.subscribeCore = function (o) {
+      var shouldConnect = ++this._count === 1, subscription = this.source.subscribe(o);
+      shouldConnect && (this._connectableSubscription = this.source.connect());
+      return new RefCountDisposable(this, subscription);
+    };
+
+    function RefCountDisposable(p, s) {
+      this._p = p;
+      this._s = s;
+      this.isDisposed = false;
+    }
+
+    RefCountDisposable.prototype.dispose = function () {
+      if (!this.isDisposed) {
+        this.isDisposed = true;
+        this._s.dispose();
+        --this._p._count === 0 && this._p._connectableSubscription.dispose();
+      }
+    };
+
+    return RefCountObservable;
+  }(ObservableBase));
+
+  var ConnectableObservable = Rx.ConnectableObservable = (function (__super__) {
+    inherits(ConnectableObservable, __super__);
+    function ConnectableObservable(source, subject) {
+      this.source = source;
+      this._hasSubscription  = false;
+      this._subscription = null;
+      this._sourceObservable = source.asObservable();
+      this._subject = subject;
+      __super__.call(this);
+    }
+
+    function ConnectDisposable(parent) {
+      this._p = parent;
+      this.isDisposed = false;
+    }
+
+    ConnectDisposable.prototype.dispose = function () {
+      if (!this.isDisposed) {
+        this.isDisposed = true;
+        this._p._hasSubscription = false;
+      }
+    };
+
+    ConnectableObservable.prototype.connect = function () {
+      if (!this._hasSubscription) {
+        this._hasSubscription = true;
+        this._subscription = new BinaryDisposable(
+          this._sourceObservable.subscribe(this._subject),
+          new ConnectDisposable(this)
+        );
+      }
+      return this._subscription;
+    };
+
+    ConnectableObservable.prototype._subscribe = function (o) {
+      return this._subject.subscribe(o);
+    };
+
     ConnectableObservable.prototype.refCount = function () {
-      var connectableSubscription, count = 0, source = this;
-      return new AnonymousObservable(function (observer) {
-          var shouldConnect = ++count === 1,
-            subscription = source.subscribe(observer);
-          shouldConnect && (connectableSubscription = source.connect());
-          return function () {
-            subscription.dispose();
-            --count === 0 && connectableSubscription.dispose();
-          };
-      });
+      return new RefCountObservable(this);
     };
 
     return ConnectableObservable;

@@ -1,109 +1,119 @@
   var Enumerable = Rx.internals.Enumerable = function () { };
 
+  function IsDisposedDisposable(state) {
+    this._s = state;
+    this.isDisposed = false;
+  }
+
+  IsDisposedDisposable.prototype.dispose = function () {
+    if (!this.isDisposed) {
+      this.isDisposed = true;
+      this._s.isDisposed = true;
+    }
+  };
+
   var ConcatEnumerableObservable = (function(__super__) {
     inherits(ConcatEnumerableObservable, __super__);
     function ConcatEnumerableObservable(sources) {
       this.sources = sources;
       __super__.call(this);
     }
-    
-    ConcatEnumerableObservable.prototype.subscribeCore = function (o) {
-      var isDisposed, subscription = new SerialDisposable();
-      var cancelable = immediateScheduler.scheduleRecursiveWithState(this.sources[$iterator$](), function (e, self) {
-        if (isDisposed) { return; }
-        var currentItem = tryCatch(e.next).call(e);
-        if (currentItem === errorObj) { return o.onError(currentItem.e); }
 
-        if (currentItem.done) {
-          return o.onCompleted();
-        }
+    function scheduleMethod(state, recurse) {
+      if (state.isDisposed) { return; }
+      var currentItem = tryCatch(state.e.next).call(state.e);
+      if (currentItem === errorObj) { return state.o.onError(currentItem.e); }
+      if (currentItem.done) { return state.o.onCompleted(); }
 
-        // Check if promise
-        var currentValue = currentItem.value;
-        isPromise(currentValue) && (currentValue = observableFromPromise(currentValue));
+      // Check if promise
+      var currentValue = currentItem.value;
+      isPromise(currentValue) && (currentValue = observableFromPromise(currentValue));
 
-        var d = new SingleAssignmentDisposable();
-        subscription.setDisposable(d);
-        d.setDisposable(currentValue.subscribe(new InnerObserver(o, self, e)));
-      });
-
-      return new CompositeDisposable(subscription, cancelable, disposableCreate(function () {
-        isDisposed = true;
-      }));
-    };
-    
-    function InnerObserver(o, s, e) {
-      this.o = o;
-      this.s = s;
-      this.e = e;
-      this.isStopped = false;
+      var d = new SingleAssignmentDisposable();
+      state.subscription.setDisposable(d);
+      d.setDisposable(currentValue.subscribe(new InnerObserver(state, recurse)));
     }
-    InnerObserver.prototype.onNext = function (x) { if(!this.isStopped) { this.o.onNext(x); } };
-    InnerObserver.prototype.onError = function (err) {
-      if (!this.isStopped) {
-        this.isStopped = true;
-        this.o.onError(err);
-      }
+
+    ConcatEnumerableObservable.prototype.subscribeCore = function (o) {
+      var subscription = new SerialDisposable();
+      var state = {
+        isDisposed: false,
+        o: o,
+        subscription: subscription,
+        e: this.sources[$iterator$]()
+      };
+
+      var cancelable = currentThreadScheduler.scheduleRecursive(state, scheduleMethod);
+      return new NAryDisposable([subscription, cancelable, new IsDisposedDisposable(state)]);
     };
-    InnerObserver.prototype.onCompleted = function () {
-      if (!this.isStopped) {
-        this.isStopped = true;
-        this.s(this.e);
-      }
-    };
-    InnerObserver.prototype.dispose = function () { this.isStopped = true; };
-    InnerObserver.prototype.fail = function (err) {
-      if (!this.isStopped) {
-        this.isStopped = true;
-        this.o.onError(err);
-        return true;
-      }
-      return false;
-    };
-    
+
+    function InnerObserver(state, recurse) {
+      this._state = state;
+      this._recurse = recurse;
+      AbstractObserver.call(this);
+    }
+
+    inherits(InnerObserver, AbstractObserver);
+
+    InnerObserver.prototype.next = function (x) { this._state.o.onNext(x); };
+    InnerObserver.prototype.error = function (e) { this._state.o.onError(e); };
+    InnerObserver.prototype.completed = function () { this._recurse(this._state); };
+
     return ConcatEnumerableObservable;
   }(ObservableBase));
 
   Enumerable.prototype.concat = function () {
     return new ConcatEnumerableObservable(this);
   };
-  
+
   var CatchErrorObservable = (function(__super__) {
-    inherits(CatchErrorObservable, __super__);
     function CatchErrorObservable(sources) {
       this.sources = sources;
       __super__.call(this);
     }
-    
+
+    inherits(CatchErrorObservable, __super__);
+
+    function scheduleMethod(state, recurse) {
+      if (state.isDisposed) { return; }
+      var currentItem = tryCatch(state.e.next).call(state.e);
+      if (currentItem === errorObj) { return state.o.onError(currentItem.e); }
+      if (currentItem.done) { return state.lastError !== null ? state.o.onError(state.lastError) : state.o.onCompleted(); }
+
+      var currentValue = currentItem.value;
+      isPromise(currentValue) && (currentValue = observableFromPromise(currentValue));
+
+      var d = new SingleAssignmentDisposable();
+      state.subscription.setDisposable(d);
+      d.setDisposable(currentValue.subscribe(new InnerObserver(state, recurse)));
+    }
+
     CatchErrorObservable.prototype.subscribeCore = function (o) {
-      var e = this.sources[$iterator$]();
+      var subscription = new SerialDisposable();
+      var state = {
+        isDisposed: false,
+        e: this.sources[$iterator$](),
+        subscription: subscription,
+        lastError: null,
+        o: o
+      };
 
-      var isDisposed, subscription = new SerialDisposable();
-      var cancelable = immediateScheduler.scheduleRecursiveWithState(null, function (lastException, self) {
-        if (isDisposed) { return; }
-        var currentItem = tryCatch(e.next).call(e);
-        if (currentItem === errorObj) { return o.onError(currentItem.e); }
-
-        if (currentItem.done) {
-          return lastException !== null ? o.onError(lastException) : o.onCompleted();
-        }
-
-        // Check if promise
-        var currentValue = currentItem.value;
-        isPromise(currentValue) && (currentValue = observableFromPromise(currentValue));
-
-        var d = new SingleAssignmentDisposable();
-        subscription.setDisposable(d);
-        d.setDisposable(currentValue.subscribe(
-          function(x) { o.onNext(x); },
-          self,
-          function() { o.onCompleted(); }));
-      });
-      return new CompositeDisposable(subscription, cancelable, disposableCreate(function () {
-        isDisposed = true;
-      }));
+      var cancelable = currentThreadScheduler.scheduleRecursive(state, scheduleMethod);
+      return new NAryDisposable([subscription, cancelable, new IsDisposedDisposable(state)]);
     };
-    
+
+    function InnerObserver(state, recurse) {
+      this._state = state;
+      this._recurse = recurse;
+      AbstractObserver.call(this);
+    }
+
+    inherits(InnerObserver, AbstractObserver);
+
+    InnerObserver.prototype.next = function (x) { this._state.o.onNext(x); };
+    InnerObserver.prototype.error = function (e) { this._state.lastError = e; this._recurse(this._state); };
+    InnerObserver.prototype.completed = function () { this._state.o.onCompleted(); };
+
     return CatchErrorObservable;
   }(ObservableBase));
 
@@ -121,17 +131,17 @@
 
       var e = sources[$iterator$]();
 
-      var isDisposed,
-        lastException,
+      var state = { isDisposed: false },
+        lastError,
         subscription = new SerialDisposable();
-      var cancelable = immediateScheduler.scheduleRecursive(function (self) {
-        if (isDisposed) { return; }
+      var cancelable = currentThreadScheduler.scheduleRecursive(null, function (_, self) {
+        if (state.isDisposed) { return; }
         var currentItem = tryCatch(e.next).call(e);
         if (currentItem === errorObj) { return o.onError(currentItem.e); }
 
         if (currentItem.done) {
-          if (lastException) {
-            o.onError(lastException);
+          if (lastError) {
+            o.onError(lastError);
           } else {
             o.onCompleted();
           }
@@ -144,7 +154,7 @@
 
         var outer = new SingleAssignmentDisposable();
         var inner = new SingleAssignmentDisposable();
-        subscription.setDisposable(new CompositeDisposable(inner, outer));
+        subscription.setDisposable(new BinaryDisposable(inner, outer));
         outer.setDisposable(currentValue.subscribe(
           function(x) { o.onNext(x); },
           function (exn) {
@@ -159,40 +169,39 @@
           function() { o.onCompleted(); }));
       });
 
-      return new CompositeDisposable(notificationDisposable, subscription, cancelable, disposableCreate(function () {
-        isDisposed = true;
-      }));
+      return new NAryDisposable([notificationDisposable, subscription, cancelable, new IsDisposedDisposable(state)]);
     });
   };
-  
+
   var RepeatEnumerable = (function (__super__) {
     inherits(RepeatEnumerable, __super__);
-    
     function RepeatEnumerable(v, c) {
       this.v = v;
       this.c = c == null ? -1 : c;
     }
+
     RepeatEnumerable.prototype[$iterator$] = function () {
-      return new RepeatEnumerator(this); 
+      return new RepeatEnumerator(this);
     };
-    
+
     function RepeatEnumerator(p) {
       this.v = p.v;
       this.l = p.c;
     }
+
     RepeatEnumerator.prototype.next = function () {
       if (this.l === 0) { return doneEnumerator; }
       if (this.l > 0) { this.l--; }
-      return { done: false, value: this.v }; 
+      return { done: false, value: this.v };
     };
-    
+
     return RepeatEnumerable;
   }(Enumerable));
 
   var enumerableRepeat = Enumerable.repeat = function (value, repeatCount) {
     return new RepeatEnumerable(value, repeatCount);
   };
-  
+
   var OfEnumerable = (function(__super__) {
     inherits(OfEnumerable, __super__);
     function OfEnumerable(s, fn, thisArg) {
@@ -202,19 +211,20 @@
     OfEnumerable.prototype[$iterator$] = function () {
       return new OfEnumerator(this);
     };
-    
+
     function OfEnumerator(p) {
       this.i = -1;
       this.s = p.s;
       this.l = this.s.length;
       this.fn = p.fn;
     }
+
     OfEnumerator.prototype.next = function () {
      return ++this.i < this.l ?
        { done: false, value: !this.fn ? this.s[this.i] : this.fn(this.s[this.i], this.i, this.s) } :
-       doneEnumerator; 
+       doneEnumerator;
     };
-    
+
     return OfEnumerable;
   }(Enumerable));
 

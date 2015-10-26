@@ -10,29 +10,26 @@
     function setDisposable(s, state) {
       var ado = state[0], self = state[1];
       var sub = tryCatch(self.__subscribe).call(self, ado);
-
-      if (sub === errorObj) {
-        if(!ado.fail(errorObj.e)) { return thrower(errorObj.e); }
-      }
+      if (sub === errorObj && !ado.fail(errorObj.e)) { thrower(errorObj.e); }
       ado.setDisposable(fixSubscriber(sub));
-    }
-
-    function innerSubscribe(observer) {
-      var ado = new AutoDetachObserver(observer), state = [ado, this];
-
-      if (currentThreadScheduler.scheduleRequired()) {
-        currentThreadScheduler.scheduleWithState(state, setDisposable);
-      } else {
-        setDisposable(null, state);
-      }
-      return ado;
     }
 
     function AnonymousObservable(subscribe, parent) {
       this.source = parent;
       this.__subscribe = subscribe;
-      __super__.call(this, innerSubscribe);
+      __super__.call(this);
     }
+
+    AnonymousObservable.prototype._subscribe = function (o) {
+      var ado = new AutoDetachObserver(o), state = [ado, this];
+
+      if (currentThreadScheduler.scheduleRequired()) {
+        currentThreadScheduler.schedule(state, setDisposable);
+      } else {
+        setDisposable(null, state);
+      }
+      return ado;
+    };
 
     return AnonymousObservable;
 

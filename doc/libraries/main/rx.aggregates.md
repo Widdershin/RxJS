@@ -22,7 +22,7 @@ NuGet Dependencies:
 ## Included Observable Operators ##
 
 ### `Observable Instance Methods`
-- [`aggregate`](../../api/core/operators/aggregate.md)
+- [`aggregate`](../../api/core/operators/reduce.md)
 - [`all`](../../api/core/operators/every.md)
 - [`any`](../../api/core/operators/some.md)
 - [`average`](../../api/core/operators/average.md)
@@ -36,6 +36,7 @@ NuGet Dependencies:
 - [`indexOf`](../../api/core/operators/indexof.md)
 - [`isEmpty`](../../api/core/operators/isempty.md)
 - [`last`](../../api/core/operators/last.md)
+- [`lastIndexOf`](../../api/core/operators/lastindexof.md)
 - [`max`](../../api/core/operators/max.md)
 - [`maxBy`](../../api/core/operators/maxby.md)
 - [`min`](../../api/core/operators/min.md)
@@ -43,6 +44,7 @@ NuGet Dependencies:
 - [`reduce`](../../api/core/operators/reduce.md)
 - [`sequenceEqual`](../../api/core/operators/sequenceequal.md)
 - [`single`](../../api/core/operators/single.md)
+- [`slice`](../../api/core/operators/slice.md)
 - [`some`](../../api/core/operators/some.md)
 - [`sum`](../../api/core/operators/sum.md)
 - [`toMap`](../../api/core/operators/tomap.md)
