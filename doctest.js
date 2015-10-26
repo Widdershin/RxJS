@@ -10,37 +10,73 @@ process.stdin.on('readable', function () {
   var filesToTest = process.stdin.read();
 
   if (filesToTest !== null) {
-    filesToTest
+   var results = filesToTest
       .split('\n')
       .filter(fileName => fileName !== '')
       .map(read)
-      .forEach(testFile);
+      .map(testFile);
+
+   printResults(flattenArray(results));
   }
 });
 
 function read (fileName) {
-  return fs.readFileSync(fileName, 'utf8');
+  return {contents: fs.readFileSync(fileName, 'utf8'), fileName};
 }
 
-function testFile (docFile) {
-  var codeSnippets = docFile.match(/```js([^```]*)```/g) || [];
+function testFile (args) {
+  var contents = args.contents;
+  var fileName = args.fileName;
+  var codeSnippets = contents.match(/```js([^```]*)```/g) || [];
 
-  codeSnippets
-    .map(snippet => snippet.replace('```js', '').replace('```', ''))
-    .forEach(test);
+  var results = codeSnippets
+    .map(cleanUpSnippet)
+    .map(test(fileName));
+
+  return flattenArray(results);
 }
 
-function test (codeSnippet) {
-  var success = false;
+function test (filename) {
+  return (codeSnippet) => {
+    var success = false;
 
-  try {
-    eval(codeSnippet);
+    var oldLog = console.log;
 
-    success = true;
-  } catch (e) {
-    console.trace(e);
-  }
+    console.log = () => null;
 
-  console.log(success);
+    try {
+      eval(codeSnippet);
+
+      success = true;
+    } catch (e) {
+      oldLog(filename);
+      console.trace(e);
+    }
+
+    console.log = oldLog;
+
+    return {success: success, filename: filename};
+  };
 }
 
+function flattenArray (array) {
+  return array.reduce((a, b) => a.concat(b), []);
+}
+
+function printResults (results) {
+  console.log(results.filter(result => !result.success));
+
+  var totalTestCount = results.length;
+  var passingCount = results.filter(result => result.success).length;
+
+  console.log(`${passingCount} passed out of ${totalTestCount} run.`);
+}
+
+function cleanUpSnippet (codeSnippet) {
+  var rxImport = "var Rx = require('rx');";
+
+  return codeSnippet
+    .replace('```js', '')
+    .replace('```', '')
+    .replace(rxImport, '');
+}
