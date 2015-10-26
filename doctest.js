@@ -65,6 +65,7 @@ function testFile (args) {
 function test (filename) {
   return (codeSnippet) => {
     var success = false;
+    var stack = undefined;
 
     var oldLog = console.log;
 
@@ -75,12 +76,12 @@ function test (filename) {
 
       success = true;
     } catch (e) {
-      codeSnippet.trace = e.stack;
+      stack = e.stack;
+    } finally {
+      console.log = oldLog;
     }
 
-    console.log = oldLog;
-
-    return {success: success, codeSnippet: codeSnippet};
+    return {success: success, codeSnippet: codeSnippet, stack: stack};
   };
 }
 
@@ -89,7 +90,9 @@ function flattenArray (array) {
 }
 
 function printResults (results) {
-  console.log(results.filter(result => !result.success));
+  results
+    .filter(result => !result.success)
+    .forEach(printFailure)
 
   var totalTestCount = results.length;
   var passingCount = results.filter(result => result.success).length;
@@ -97,13 +100,32 @@ function printResults (results) {
   console.log(`${passingCount} passed out of ${totalTestCount} run.`);
 }
 
+function printFailure (result) {
+  console.log(`FAILURE: ${result.codeSnippet.fileName}:${result.codeSnippet.lineNumber}`);
+  console.log(relevantStackDetails(result.stack));
+  console.log('');
+}
+
 function cleanUpSnippet (codeSnippet) {
   var rxImport = "var Rx = require('rx');";
+  var rxImportComma = "var Rx = require('rx'),";
 
   codeSnippet.code = codeSnippet.code
     .replace('```js', '')
     .replace('```', '')
-    .replace(rxImport, '');
+    .replace(rxImport, '')
+    .replace(rxImportComma, '');
 
   return codeSnippet;
+}
+
+function relevantStackDetails (stack) {
+  var match = stack.match(/([\w\W]*)at eval/) ||
+    stack.match(/([\w\W]*)at [\w*\/]*doctest.js/);
+
+  if (match !== null) {
+    return match[1];
+  }
+
+  return stack;
 }
