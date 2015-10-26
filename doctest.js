@@ -10,13 +10,14 @@ process.stdin.on('readable', function () {
   var filesToTest = process.stdin.read();
 
   if (filesToTest !== null) {
-   var results = filesToTest
+    var results = filesToTest
       .split('\n')
       .filter(fileName => fileName !== '')
       .map(read)
+      .map(parseCodeSnippets)
       .map(testFile);
 
-   printResults(flattenArray(results));
+    printResults(flattenArray(results));
   }
 });
 
@@ -24,14 +25,39 @@ function read (fileName) {
   return {contents: fs.readFileSync(fileName, 'utf8'), fileName};
 }
 
-function testFile (args) {
+function parseCodeSnippets (args) {
   var contents = args.contents;
   var fileName = args.fileName;
-  var codeSnippets = contents.match(/```js([^```]*)```/g) || [];
 
-  var results = codeSnippets
-    .map(cleanUpSnippet)
-    .map(test(fileName));
+  var last = (arr) => arr[arr.length - 1];
+
+  var codeSnippets = contents.split('\n').reduce((snippets, line, index) => {
+    var lastSnippet = last(snippets);
+
+    if (line === '```js') {
+      snippets.lastComplete = false;
+      return snippets.concat({code: '', lineNumber: index + 1, fileName});
+    }
+
+    if (lastSnippet && !snippets.lastComplete) {
+      if (line === '```') {
+        snippets.lastComplete = true;
+      } else {
+        lastSnippet.code += line + '\n';
+      }
+    }
+
+    return snippets;
+  }, []);
+
+  return {fileName, codeSnippets: codeSnippets.map(cleanUpSnippet)};
+}
+
+function testFile (args) {
+  var codeSnippets = args.codeSnippets;
+  var fileName = args.fileName;
+
+  var results = codeSnippets.map(test(fileName));
 
   return flattenArray(results);
 }
@@ -45,17 +71,16 @@ function test (filename) {
     console.log = () => null;
 
     try {
-      eval(codeSnippet);
+      eval(codeSnippet.code);
 
       success = true;
     } catch (e) {
-      oldLog(filename);
-      console.trace(e);
+      codeSnippet.trace = e.stack;
     }
 
     console.log = oldLog;
 
-    return {success: success, filename: filename};
+    return {success: success, codeSnippet: codeSnippet};
   };
 }
 
@@ -75,8 +100,10 @@ function printResults (results) {
 function cleanUpSnippet (codeSnippet) {
   var rxImport = "var Rx = require('rx');";
 
-  return codeSnippet
+  codeSnippet.code = codeSnippet.code
     .replace('```js', '')
     .replace('```', '')
     .replace(rxImport, '');
+
+  return codeSnippet;
 }
