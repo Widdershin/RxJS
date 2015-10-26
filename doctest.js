@@ -1,8 +1,10 @@
 #! /usr/bin/env node
+'use strict';
 
 var Rx = require('.');
 
 var fs = require('fs');
+var process = require('process');
 
 process.stdin.setEncoding('utf8');
 
@@ -34,13 +36,13 @@ function parseCodeSnippets (args) {
   var codeSnippets = contents.split('\n').reduce((snippets, line, index) => {
     var lastSnippet = last(snippets);
 
-    if (line === '```js') {
+    if (line.trim() === '```js') {
       snippets.lastComplete = false;
       return snippets.concat({code: '', lineNumber: index + 1, fileName});
     }
 
     if (lastSnippet && !snippets.lastComplete) {
-      if (line === '```') {
+      if (line.trim() === '```') {
         snippets.lastComplete = true;
       } else {
         lastSnippet.code += line + '\n';
@@ -50,7 +52,14 @@ function parseCodeSnippets (args) {
     return snippets;
   }, []);
 
-  return {fileName, codeSnippets: codeSnippets.map(cleanUpSnippet)};
+  return {
+    fileName,
+    codeSnippets: codeSnippets.map(cleanUpSnippet).filter(ignorePseudocode)
+  };
+}
+
+function ignorePseudocode (snippet) {
+  return !snippet.code.match(/\.\.\./g);
 }
 
 function testFile (args) {
@@ -72,15 +81,14 @@ function test (filename) {
     console.log = () => null;
 
     try {
-      eval(codeSnippet.code);
+      eval('(function () {' + codeSnippet.code + '})();');
 
       success = true;
     } catch (e) {
-      stack = e.stack;
-    } finally {
-      console.log = oldLog;
+      stack = e.stack || '';
     }
 
+    console.log = oldLog;
     return {success: success, codeSnippet: codeSnippet, stack: stack};
   };
 }
@@ -92,12 +100,14 @@ function flattenArray (array) {
 function printResults (results) {
   results
     .filter(result => !result.success)
-    .forEach(printFailure)
+    .forEach(printFailure);
 
   var totalTestCount = results.length;
   var passingCount = results.filter(result => result.success).length;
 
   console.log(`${passingCount} passed out of ${totalTestCount} run.`);
+
+  process.exit(totalTestCount === passingCount ? 0 : 127);
 }
 
 function printFailure (result) {
